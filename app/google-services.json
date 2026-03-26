@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "1069039345118",
+    "firebase_url": "https://cricket-score-app-e262e-default-rtdb.firebaseio.com",
+    "project_id": "cricket-score-app-e262e",
+    "storage_bucket": "cricket-score-app-e262e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1069039345118:android:c0ee32640565be55d5914f",
+        "android_client_info": {
+          "package_name": "com.cricpeak.scorelive"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDw4E1NDSpAy36moFMJo0-4eOVNhtyuYb8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1069039345118:android:349f81dc8af5f413d5914f",
+        "android_client_info": {
+          "package_name": "com.cricscore.scorelive"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDw4E1NDSpAy36moFMJo0-4eOVNhtyuYb8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

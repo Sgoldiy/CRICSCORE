@@ -1,0 +1,1682 @@
+package com.cricpeak.scorelive.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import android.app.Activity
+import android.util.Log
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.cricpeak.scorelive.R
+import com.cricpeak.scorelive.ads.AdInterstitialManager
+import com.cricpeak.scorelive.ads.AdsState
+import com.cricpeak.scorelive.ads.AdsViewModel
+import com.cricpeak.scorelive.ads.BannerAdView
+import com.cricpeak.scorelive.ui.apicallfiles.*
+import com.cricpeak.scorelive.ui.theme.CardBackground
+import com.cricpeak.scorelive.ui.theme.DarkBackground
+import com.cricpeak.scorelive.ui.theme.GilroyFontFamily
+import com.cricpeak.scorelive.ui.theme.RadialTeal
+import com.cricpeak.scorelive.ui.theme.TextGray
+import kotlinx.coroutines.delay
+import kotlin.let
+
+// Data class for Player from API
+data class Player(
+    val id: Int,
+    val name: String,
+    val imageUrl: String = "",
+    val role: String = "",
+    val teamId: Int = 0,
+    val battingStyle: String = "N/A",
+    val bowlingStyle: String = "N/A"
+)
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    var selectedTabIndex by remember { mutableStateOf(0) }
+    val tabs = listOf("Summary", "Scorecard", "Commentary")
+    val TEST_AD_ID = "ca-app-pub-3940256099942544/1033173712"
+    // Track previous tab index to detect changes
+    var previousTabIndex by remember { mutableStateOf(0) }
+
+    // Initialize ViewModels
+    val viewModel: MatchDetailsViewModel = viewModel()
+    val adsViewModel: AdsViewModel = viewModel()
+    
+    val matchDetailsState by viewModel.matchDetailsState.collectAsState()
+    val commentsState by viewModel.commentsState.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val scoreAnimation by viewModel.scoreAnimationState.collectAsState()
+    val adsState: AdsState by adsViewModel.adsState.collectAsState()
+    
+    // Global Ad pre-loading for Match Details
+    LaunchedEffect(adsState) {
+        val adConfig = adsState.inter_details
+        if (adConfig.enabled && adConfig.ads_unit.isNotEmpty()) {
+            AdInterstitialManager.MatchDetailsAdManager.loadAd(context, adConfig.ads_unit)
+        }
+    }
+
+// ✅ Tab Click Logic
+    LaunchedEffect(selectedTabIndex) {
+
+        if (selectedTabIndex != previousTabIndex && activity != null) {
+            val adConfig = adsState.inter_details
+            
+            if (adConfig.enabled && adConfig.ads_unit.isNotEmpty()) {
+                AdInterstitialManager.MatchDetailsAdManager.showAdIfAvailable(
+                    activity = activity,
+                    adUnitId = adConfig.ads_unit
+                ) {
+                    // Continue navigation if needed
+                }
+            }
+        }
+
+        previousTabIndex = selectedTabIndex
+    }
+
+    // State for UI data (to be populated from API)
+    val matchInfoState = remember { mutableStateOf<MatchInfo?>(null) }
+    var innings1 by remember { mutableStateOf(getSampleInningsData().first) }
+    var innings2 by remember { mutableStateOf(getSampleInningsData().second) }
+
+    // Squad states
+    var homeTeamPlayers by remember { mutableStateOf<List<Player>>(emptyList()) }
+    var awayTeamPlayers by remember { mutableStateOf<List<Player>>(emptyList()) }
+
+    // Player Profile State
+    var selectedPlayerProfile by remember { mutableStateOf<PlayerProfileData?>(null) }
+
+    // Handle back press to close player profile if open
+    BackHandler(enabled = selectedPlayerProfile != null) {
+        selectedPlayerProfile = null
+    }
+
+    // Load match details when screen loads
+    LaunchedEffect(matchId) {
+        viewModel.loadMatchDetails(matchId)
+    }
+
+    // Update UI when API data arrives
+    LaunchedEffect(matchDetailsState) {
+        when (matchDetailsState) {
+            is MatchDetailsState.Success -> {
+                val matchData = (matchDetailsState as MatchDetailsState.Success).matchData
+
+                // Map API data to MatchInfo format for existing UI
+                matchInfoState.value = MatchInfo(
+                    team1Short = matchData.homeTeam.shortName,
+                    team1Full = matchData.homeTeam.name,
+                    team2Short = matchData.awayTeam.shortName,
+                    team2Full = matchData.awayTeam.name,
+                    date = matchData.startDateTime,
+                    venue = "${matchData.venue.name}, ${matchData.venue.city}",
+                    toss = matchData.tossResult,
+                    umpire = "",
+                    tvUmpire = "",
+                    matchReferee = ""
+                )
+
+                // Map first innings data
+                val firstInning = matchData.getFirstInning()
+                if (firstInning != null) {
+                    val battingTeam = matchData.getBattingTeam(firstInning)
+                    innings1 = firstInning.toUIInningsData(
+                        battingTeam?.name ?: "Team 1",
+                        battingTeam?.shortName ?: "T1",
+                        matchData.players
+                    )
+                }
+
+                // Map second innings data
+                val secondInning = matchData.getSecondInning()
+                if (secondInning != null) {
+                    val battingTeam = matchData.getBattingTeam(secondInning)
+                    innings2 = secondInning.toUIInningsData(
+                        battingTeam?.name ?: "Team 2",
+                        battingTeam?.shortName ?: "T2",
+                        matchData.players
+                    )
+                }
+
+                // Extract squads using the Players list from API
+                homeTeamPlayers = matchData.players
+                    .filter { it.teamId == matchData.homeTeam.id }
+                    .map { 
+                        Player(
+                            it.id, 
+                            it.displayName, 
+                            it.imageUrl ?: "", 
+                            it.type ?: "", 
+                            it.teamId,
+                            it.battingStyle ?: it.battingHand ?: "N/A",
+                            it.bowlingStyle ?: it.bowlingType ?: "N/A"
+                        ) 
+                    }
+
+                awayTeamPlayers = matchData.players
+                    .filter { it.teamId == matchData.awayTeam.id }
+                    .map { 
+                        Player(
+                            it.id, 
+                            it.displayName, 
+                            it.imageUrl ?: "", 
+                            it.type ?: "", 
+                            it.teamId,
+                            it.battingStyle ?: it.battingHand ?: "N/A",
+                            it.bowlingStyle ?: it.bowlingType ?: "N/A"
+                        ) 
+                    }
+            }
+
+            is MatchDetailsState.Loading -> {}
+            is MatchDetailsState.Error -> {}
+        }
+    }
+
+    // Get real commentary data from API
+    val commentsData = when (commentsState) {
+        is CommentsState.Success -> (commentsState as CommentsState.Success).commentsData
+        else -> CommentsData()
+    }
+
+    val radialGradient = Brush.radialGradient(
+        colors = listOf(RadialTeal.copy(alpha = 0.5f), Color.Transparent),
+        center = Offset(540f, -50f),
+        radius = 1000f
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DarkBackground)
+    ) {
+        // Background Radial Gradient
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(350.dp)
+                .background(radialGradient)
+        )
+
+        // Handle loading and error states
+        when (matchDetailsState) {
+            is MatchDetailsState.Loading -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF00FF00))
+                }
+            }
+
+            is MatchDetailsState.Error -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Error: ${(matchDetailsState as MatchDetailsState.Error).message}",
+                            color = Color.Red,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { viewModel.retry(matchId) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00FF00))
+                        ) {
+                            Text("Retry", color = Color.Black)
+                        }
+                    }
+                }
+            }
+
+            is MatchDetailsState.Success -> {
+                val matchData = (matchDetailsState as MatchDetailsState.Success).matchData
+
+                PullToRefreshBox(
+                    isRefreshing = isRefreshing,
+                    onRefresh = { viewModel.loadMatchDetails(matchId, isRefresh = true) },
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
+                            .pointerInput(Unit) {
+                                var totalDrag = 0f
+                                detectHorizontalDragGestures(
+                                    onHorizontalDrag = { _, dragAmount ->
+                                        totalDrag += dragAmount
+                                    },
+                                    onDragEnd = {
+                                        if (totalDrag > 200) {
+                                            if (selectedTabIndex > 0) selectedTabIndex--
+                                        } else if (totalDrag < -200) {
+                                            if (selectedTabIndex < tabs.size - 1) selectedTabIndex++
+                                        }
+                                        totalDrag = 0f
+                                    }
+                                )
+                            },
+                        contentPadding = PaddingValues(bottom = 32.dp)
+                    ) {
+                        // Header Section
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 12.dp, bottom = 12.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = matchData.matchName,
+                                        color = Color.White,
+                                        fontSize = 20.sp,
+                                        fontFamily = GilroyFontFamily,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Live from ${matchData.venue.name}",
+                                        color = TextGray,
+                                        fontSize = 13.sp,
+                                        fontFamily = GilroyFontFamily
+                                    )
+                                }
+                                
+                                IconButton(
+                                    onClick = onBackClick,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(end = 16.dp)
+                                        .background(Color.White.copy(alpha = 0.1f), CircleShape)
+                                        .size(36.dp)
+                                ) {
+                                    Text("✕", color = Color.White, fontSize = 16.sp)
+                                }
+                            }
+                        }
+
+                        // Scorecard Detail Card
+                        item {
+                            DetailScoreCard(matchData, scoreAnimation)
+                        }
+
+                        item { Spacer(modifier = Modifier.height(16.dp)) }
+
+                        // Dynamic Player Performance Card
+                        item {
+                            PlayerPerformanceCard(matchData, onPlayerClick = { id ->
+                                matchData.players.find { it.id == id }?.let { p ->
+                                    selectedPlayerProfile = PlayerProfileData(
+                                        id = p.id,
+                                        name = p.displayName,
+                                        firstName = p.firstName,
+                                        lastName = p.lastName,
+                                        middleName = p.middleName,
+                                        role = p.type ?: "Player",
+                                        imageUrl = p.imageUrl ?: "",
+                                        battingStyle = p.battingStyle ?: p.battingHand ?: "N/A",
+                                        bowlingStyle = p.bowlingStyle ?: p.bowlingType ?: "N/A",
+                                        dob = p.dob,
+                                        birthPlace = p.birthPlace,
+                                        height = p.height,
+                                        bio = p.bio,
+                                        isCaptain = p.isCaptain,
+                                        isWicketKeeper = p.isWicketKeeper
+                                    )
+                                }
+                            })
+                        }
+
+                        item { Spacer(modifier = Modifier.height(8.dp)) }
+                        
+                        // 1. Match Details Banner Ad
+                        if (adsState.match_details_banner.enabled && adsState.match_details_banner.ads_unit.isNotEmpty()) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                                    BannerAdView(adUnitId = adsState.match_details_banner.ads_unit)
+                                }
+                            }
+                        }
+
+                        // Recent Over Stats
+                        item {
+                            RecentOverStats(commentsData.recentOvers)
+                        }
+
+                        // Tabs below the over screen
+                        item {
+                            DetailTabs(tabs, selectedTabIndex) { selectedTabIndex = it }
+                        }
+
+                        // Conditional Content based on selected tab with animation
+                        item {
+                            AnimatedContent(
+                                targetState = selectedTabIndex,
+                                transitionSpec = {
+                                    if (targetState > initialState) {
+                                        slideInHorizontally { width -> width } + fadeIn() togetherWith
+                                                slideOutHorizontally { width -> -width } + fadeOut()
+                                    } else {
+                                        slideInHorizontally { width -> -width } + fadeIn() togetherWith
+                                                slideOutHorizontally { width -> width } + fadeOut()
+                                    }
+                                },
+                                label = "TabContentTransition"
+                            ) { targetTabIndex ->
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    when (targetTabIndex) {
+                                        0 -> { // Summary
+                                            SquadView(
+                                                "${matchData.homeTeam.name} Squad",
+                                                homeTeamPlayers,
+                                                onPlayerClick = { id ->
+                                                    matchData.players.find { it.id == id }
+                                                        ?.let { p ->
+                                                            selectedPlayerProfile =
+                                                                PlayerProfileData(
+                                                                    id = p.id,
+                                                                    name = p.displayName,
+                                                                    firstName = p.firstName,
+                                                                    lastName = p.lastName,
+                                                                    middleName = p.middleName,
+                                                                    role = p.type ?: "Player",
+                                                                    imageUrl = p.imageUrl ?: "",
+                                                                    battingStyle = p.battingStyle ?: p.battingHand ?: "N/A",
+                                                                    bowlingStyle = p.bowlingStyle ?: p.bowlingType ?: "N/A",
+                                                                    dob = p.dob,
+                                                                    birthPlace = p.birthPlace,
+                                                                    height = p.height,
+                                                                    bio = p.bio,
+                                                                    isCaptain = p.isCaptain,
+                                                                    isWicketKeeper = p.isWicketKeeper
+                                                                )
+                                                        }
+                                                }
+                                            )
+                                            
+                                            // 6. Teams Banner Ad - Between two teams
+                                            if (adsState.teams_banner.enabled && adsState.teams_banner.ads_unit.isNotEmpty()) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(vertical = 16.dp)
+                                                ) {
+                                                    BannerAdView(adUnitId = adsState.teams_banner.ads_unit)
+                                                }
+                                            }
+                                            
+                                            Spacer(modifier = Modifier.height(24.dp))
+                                            SquadView(
+                                                "${matchData.awayTeam.name} Squad",
+                                                awayTeamPlayers,
+                                                onPlayerClick = { id ->
+                                                    matchData.players.find { it.id == id }
+                                                        ?.let { p ->
+                                                            selectedPlayerProfile =
+                                                                PlayerProfileData(
+                                                                    id = p.id,
+                                                                    name = p.displayName,
+                                                                    firstName = p.firstName,
+                                                                    lastName = p.lastName,
+                                                                    middleName = p.middleName,
+                                                                    role = p.type ?: "Player",
+                                                                    imageUrl = p.imageUrl ?: "",
+                                                                    battingStyle = p.battingStyle ?: p.battingHand ?: "N/A",
+                                                                    bowlingStyle = p.bowlingStyle ?: p.bowlingType ?: "N/A",
+                                                                    dob = p.dob,
+                                                                    birthPlace = p.birthPlace,
+                                                                    height = p.height,
+                                                                    bio = p.bio,
+                                                                    isCaptain = p.isCaptain,
+                                                                    isWicketKeeper = p.isWicketKeeper
+                                                                )
+                                                        }
+                                                }
+                                            )
+                                            Spacer(modifier = Modifier.height(24.dp))
+                                            MatchInfoTable(matchInfoState.value)
+                                            Spacer(modifier = Modifier.height(24.dp))
+                                        }
+
+                                        1 -> { // Scorecard
+                                            ScorecardScreen(
+                                                inningsList = listOf(innings1, innings2),
+                                                onPlayerClick = { player ->
+                                                    selectedPlayerProfile = player
+                                                },
+                                                adsState = adsState
+                                            )
+                                        }
+
+                                        2 -> { // Commentary
+                                            when (commentsState) {
+                                                is CommentsState.Loading -> {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(32.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        CircularProgressIndicator(
+                                                            color = Color(
+                                                                0xFF00BFA5
+                                                            )
+                                                        )
+                                                    }
+                                                }
+
+                                                is CommentsState.Error -> {
+                                                    Text(
+                                                        text = "Failed to load commentary",
+                                                        color = TextGray,
+                                                        fontSize = 14.sp,
+                                                        fontFamily = GilroyFontFamily,
+                                                        modifier = Modifier.padding(24.dp)
+                                                    )
+                                                }
+
+                                                is CommentsState.Success -> {
+                                                    // Innings Selection with Team Short Names (Unified UI with Scorecard)
+                                                    if (commentsData.totalInnings > 0) {
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                                                            horizontalArrangement = Arrangement.Center,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            for (i in 1..commentsData.totalInnings) {
+                                                                val isSelected = commentsData.currentInning == i
+                                                                val inningData = matchData.innings.getOrNull(i - 1)
+                                                                val teamShortName = if (inningData != null) {
+                                                                    matchData.getBattingTeam(inningData)?.shortName ?: "T$i"
+                                                                } else "T$i"
+
+                                                                val displayLabel = if (matchData.gameType == "TEST") {
+                                                                    "$teamShortName (${(i + 1) / 2})"
+                                                                } else {
+                                                                    teamShortName
+                                                                }
+
+                                                                val currentMatchId = matchId
+                                                                Card(
+                                                                    modifier = Modifier
+                                                                        .padding(horizontal = 4.dp)
+                                                                        .width(130.dp)
+                                                                        .clickable { viewModel.loadComments(currentMatchId, i) },
+                                                                    colors = CardDefaults.cardColors(
+                                                                        containerColor = if (isSelected) Color(0xFF00BFA5) else CardBackground
+                                                                    ),
+                                                                    shape = RoundedCornerShape(12.dp),
+                                                                    border = if (!isSelected) BorderStroke(1.dp, Color.White.copy(0.1f)) else null
+                                                                ) {
+                                                                    Column(
+                                                                        modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth(),
+                                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                                        verticalArrangement = Arrangement.Center
+                                                                    ) {
+                                                                        Text(
+                                                                            text = displayLabel,
+                                                                            color = if (isSelected) Color.Black else Color.White,
+                                                                            fontWeight = FontWeight.Bold,
+                                                                            fontSize = 14.sp,
+                                                                            fontFamily = GilroyFontFamily,
+                                                                            textAlign = TextAlign.Center
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    if (commentsData.commentary.isEmpty()) {
+                                                        Text(
+                                                            text = "No commentary available yet",
+                                                            color = TextGray,
+                                                            fontSize = 14.sp,
+                                                            fontFamily = GilroyFontFamily,
+                                                            modifier = Modifier.padding(24.dp)
+                                                        )
+                                                    } else {
+                                                        val commentaryList = commentsData.commentary
+                                                        commentaryList.forEachIndexed { index, entry ->
+                                                            when (entry) {
+                                                                is CommentaryEntry.BallCommentary -> {
+                                                                    CommentaryItemFromApi(entry)
+
+                                                                    val currentBall =
+                                                                        entry.over.substringAfter(".")
+                                                                            .toIntOrNull() ?: 1
+                                                                    if (currentBall == 1) { // First ball of over (last in UI order for that over)
+                                                                        Box(
+                                                                            modifier = Modifier
+                                                                                .fillMaxWidth()
+                                                                                .padding(
+                                                                                    vertical = 12.dp,
+                                                                                    horizontal = 24.dp
+                                                                                )
+                                                                                .height(1.dp)
+                                                                                .background(
+                                                                                    Brush.horizontalGradient(
+                                                                                        colors = listOf(
+                                                                                            Color.Transparent,
+                                                                                            Color.White.copy(
+                                                                                                0.1f
+                                                                                            ),
+                                                                                            Color.Transparent
+                                                                                        )
+                                                                                    )
+                                                                                )
+                                                                        )
+                                                                    }
+                                                                }
+
+                                                                is CommentaryEntry.OverScorecard -> {
+                                                                    OverScorecardItem(entry)
+                                                                    
+                                                                    // 3. Overs Banner Ad - After every 2 overs
+                                                                    if (entry.overNumber % 2 == 0 && adsState.overs_banner.enabled && adsState.overs_banner.ads_unit.isNotEmpty()) {
+                                                                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
+                                                                            BannerAdView(adUnitId = adsState.overs_banner.ads_unit)
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Show Player Profile as an overlay
+        selectedPlayerProfile?.let { player ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                PlayerProfileScreen(
+                    player = player,
+                    onBack = { selectedPlayerProfile = null }
+                )
+            }
+        }
+
+        // Animation Overlay - Commented out since we're using inline badge now
+        // MatchEventOverlay(scoreAnimation, onDismiss = { viewModel.clearAnimation() })
+    }
+}
+
+@Composable
+fun DetailScoreCard(matchData: MatchDetailsData, scoreAnimation: ScoreAnimation) {
+    val homeInning = matchData.innings.find { it.battingTeamId == matchData.homeTeam.id }
+    val awayInning = matchData.innings.find { it.battingTeamId == matchData.awayTeam.id }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(2.dp, Color(0xFF2C2C2E), RoundedCornerShape(24.dp)),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(CardBackground, Color.Black.copy(alpha = 0.5f))
+                        )
+                    )
+            ) {
+                Column(
+                    modifier = Modifier.padding(
+                        top = 20.dp,
+                        bottom = 44.dp,
+                        start = 20.dp,
+                        end = 20.dp
+                    )
+                ) {
+                    Text(
+                        matchData.competition.name,
+                        color = TextGray,
+                        fontSize = 13.sp,
+                        fontFamily = GilroyFontFamily,
+                        modifier = Modifier.padding(bottom = 10.dp)
+                    )
+
+                    ScoreRowDetail(
+                        matchData.homeTeam.name,
+                        if (homeInning != null) "${homeInning.runsScored}/${homeInning.wickets}" else "0/0",
+                        if (homeInning != null) "(${homeInning.oversBowled})" else "(0)",
+                        matchData.homeTeam.logoUrl
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ScoreRowDetail(
+                        matchData.awayTeam.name,
+                        if (awayInning != null) "${awayInning.runsScored}/${awayInning.wickets}" else "0/0",
+                        if (awayInning != null) "(${awayInning.oversBowled})" else "(0)",
+                        matchData.awayTeam.logoUrl
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    // Second Horizontal Divider before CRR
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(0.7.dp)
+                            .background(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.White.copy(alpha = 0.15f),
+                                        Color.White.copy(alpha = 0.6f),
+                                        Color.White.copy(alpha = 0.15f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        val crr = matchData.innings.lastOrNull()?.currentRunRate ?: 0.0
+                        Text(
+                            "CRR : $crr",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 13.sp,
+                            fontFamily = GilroyFontFamily
+                        )
+
+                        val rrr = matchData.innings.lastOrNull()?.requiredRunRate
+                        if (rrr != null) {
+                            Text(
+                                "RRR : $rrr",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 13.sp,
+                                fontFamily = GilroyFontFamily
+                            )
+                        }
+                    }
+                }
+                // Status Badge inside card - aligned like Home Screen
+                val statusText: String = if (matchData.isLive) {
+                    val inning1 = matchData.innings.getOrNull(0)
+                    val inning2 = matchData.innings.getOrNull(1)
+                    if (inning2 != null && matchData.gameType != "TEST") {
+                        val target = inning1?.runsScored?.plus(1) ?: 0
+                        val needs = target - inning2.runsScored
+                        val totalBalls = if (matchData.gameType == "ODI") 300 else 120
+                        val usedBalls = inning2.oversBowled.toDoubleOrNull()
+                            ?.let { (it.toInt() * 6) + ((it % 1) * 10).toInt() } ?: 0
+                        val ballsRem = totalBalls - usedBalls
+                        if (needs > 0) {
+                            val battingTeam = matchData.getBattingTeam(inning2)?.shortName ?: "Team"
+                            "$battingTeam need $needs runs in $ballsRem balls"
+                        } else {
+                            matchData.resultText ?: "Match in progress"
+                        }
+                    } else if (inning1 != null && inning2 != null) {
+                        val diff = inning1.runsScored - inning2.runsScored
+                        if (diff > 0) "Lead by $diff runs" else "Trail by ${-diff} runs"
+                    } else {
+                        matchData.resultText ?: "Live"
+                    }
+                } else {
+                    matchData.resultText ?: ""
+                }
+
+                if (statusText.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        color = Color(0xFF2C2C2E),
+                        shape = RoundedCornerShape(
+                            topStart = 12.dp,
+                            topEnd = 12.dp,
+                            bottomStart = 0.dp,
+                            bottomEnd = 0.dp
+                        )
+                    ) {
+                        Text(
+                            statusText,
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 11.sp,
+                            fontFamily = GilroyFontFamily,
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MatchEventOverlay(scoreAnimation: ScoreAnimation, onDismiss: () -> Unit) {
+    // Local state to handle the 4s duration and animation phases
+    var showOverlay by remember { mutableStateOf(false) }
+    var currentType by remember { mutableStateOf(AnimationType.NONE) }
+    var phase by remember { mutableStateOf(0) } // 0: Idle, 1: Enter, 2: Hold, 3: Exit
+
+    // Trigger animation when scoreAnimation changes
+    LaunchedEffect(scoreAnimation) {
+        if (scoreAnimation.type != AnimationType.NONE && (System.currentTimeMillis() - scoreAnimation.timestamp) < 2000) {
+            currentType = scoreAnimation.type
+            showOverlay = true
+            phase = 1
+            delay(1000)
+            phase = 2
+            delay(2000)
+            phase = 3
+            delay(1000)
+            phase = 0
+            showOverlay = false
+            currentType = AnimationType.NONE
+            onDismiss()
+        }
+    }
+
+    if (showOverlay) {
+        val overlayColor = when (currentType) {
+            AnimationType.FOUR -> Color(0xFFF57C00) // Orange
+            AnimationType.SIX -> Color(0xFF7B1FA2)  // Purple
+            AnimationType.WICKET -> Color(0xFFD32F2F) // Red
+            else -> Color.Transparent
+        }
+
+        val eventText = when (currentType) {
+            AnimationType.FOUR -> "FOUR"
+            AnimationType.SIX -> "SIX"
+            AnimationType.WICKET -> "WICKET"
+            else -> ""
+        }
+
+        // Background Slide Animation
+        val offsetX by animateFloatAsState(
+            targetValue = when (phase) {
+                1 -> 0f // Slide in from right (start at width, move to 0)
+                2 -> 0f // Hold at 0
+                3 -> -1f // Slide out to left (0 to -width)
+                else -> 1f // Initial state (at width)
+            },
+            animationSpec = tween(durationMillis = 1000, easing = LinearOutSlowInEasing),
+            label = "OverlaySlide"
+        )
+
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val width = constraints.maxWidth.toFloat()
+            
+            // Background Overlay
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .offset(x = (width * offsetX).dp)
+                    .background(overlayColor),
+                contentAlignment = Alignment.Center
+            ) {
+                // Text Animation
+                AnimatedVisibility(
+                    visible = phase == 2,
+                    enter = fadeIn(tween(300)) + scaleIn(initialScale = 0.8f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)),
+                    exit = fadeOut(tween(300))
+                ) {
+                    Text(
+                        text = eventText,
+                        color = Color.White,
+                        fontSize = 48.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = GilroyFontFamily,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ScoreRowDetail(name: String, score: String, overs: String, logoUrl: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            AsyncImage(
+                model = logoUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                ,
+                contentScale = ContentScale.Crop,
+                error = painterResource(id = R.drawable.ic_launcher_foreground)
+            )
+            Spacer(modifier = Modifier.width(14.dp))
+            Text(
+                text = name,
+                color = Color.White,
+                fontSize = 17.sp,
+                fontFamily = GilroyFontFamily,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = score,
+                color = Color.White,
+                fontSize = 22.sp,
+                fontFamily = GilroyFontFamily,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = if (overs == "0.0" || overs.isEmpty()) "(0)" else overs,
+                color = TextGray,
+                fontFamily = GilroyFontFamily,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(bottom = 2.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun PlayerPerformanceCard(matchData: MatchDetailsData, onPlayerClick: (Int) -> Unit) {
+    val currentInning = matchData.innings.lastOrNull()
+
+    // Get currently batting players
+    val battingPlayers = currentInning?.batsmen?.filter { it.isBatting } ?: emptyList()
+    val batsman1 = battingPlayers.getOrNull(0)
+    val batsman2 = battingPlayers.getOrNull(1)
+
+    // Correct active bowler: from the latest ball bowled in recent overs
+    val activeBowlerId = currentInning?.recentOvers?.lastOrNull()?.balls?.lastOrNull()?.bowlerId
+    val bowler = currentInning?.bowlers?.find { it.playerId == activeBowlerId }
+        ?: currentInning?.bowlers?.lastOrNull()
+
+    val playersMap = matchData.players.associateBy { it.id }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(2.dp, Color(0xFF2C2C2E), RoundedCornerShape(24.dp)),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                CardBackground,
+                                Color.Black.copy(alpha = 0.4f),
+                                Color.Black.copy(alpha = 0.8f)
+                            )
+                        )
+                    )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 24.dp, bottom = 48.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val b1 = batsman1?.let { playersMap[it.playerId] }
+                    PlayerInfo(
+                        name = b1?.displayName 
+                            ?: b1?.let { "${it.firstName ?: ""} ${it.lastName ?: ""}".trim() }.takeIf { it?.isNotEmpty() == true }
+                            ?: batsman1?.fullName?.split(" ")?.lastOrNull() 
+                            ?: "Batsman",
+                        score = "${batsman1?.runs ?: 0}",
+                        detail = "(${batsman1?.balls ?: 0})",
+                        isOnStrike = batsman1?.isOnStrike ?: false,
+                        imageUrl = b1?.imageUrl ?: "",
+                        role = b1?.type ?: "",
+                        teamLogoUrl = if (b1?.teamId == matchData.homeTeam.id) matchData.homeTeam.logoUrl else matchData.awayTeam.logoUrl,
+                        onPlayerClick = { b1?.let { onPlayerClick(it.id) } }
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(50.dp)
+                            .background(Color.White.copy(0.05f))
+                    )
+
+                    val b2 = batsman2?.let { playersMap[it.playerId] }
+                    PlayerInfo(
+                        name = b2?.displayName 
+                            ?: b2?.let { "${it.firstName ?: ""} ${it.lastName ?: ""}".trim() }.takeIf { it?.isNotEmpty() == true }
+                            ?: batsman2?.fullName?.split(" ")?.lastOrNull() 
+                            ?: "Batsman",
+                        score = "${batsman2?.runs ?: 0}",
+                        detail = "(${batsman2?.balls ?: 0})",
+                        isOnStrike = batsman2?.isOnStrike ?: false,
+                        imageUrl = b2?.imageUrl ?: "",
+                        role = b2?.type ?: "",
+                        teamLogoUrl = if (b2?.teamId == matchData.homeTeam.id) matchData.homeTeam.logoUrl else matchData.awayTeam.logoUrl,
+                        onPlayerClick = { b2?.let { onPlayerClick(it.id) } }
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(50.dp)
+                            .background(Color.White.copy(0.05f))
+                    )
+
+                    val bw = bowler?.let { playersMap[it.playerId] }
+                    PlayerInfo(
+                        name = bw?.displayName 
+                            ?: bw?.let { "${it.firstName ?: ""} ${it.lastName ?: ""}".trim() }.takeIf { it?.isNotEmpty() == true }
+                            ?: bowler?.fullName?.split(" ")?.lastOrNull() 
+                            ?: "Bowler",
+                        score = "${bowler?.wickets ?: 0}-${bowler?.runs ?: 0}",
+                        detail = "(${bowler?.overs ?: "0"})",
+                        isOnStrike = false,
+                        imageUrl = bw?.imageUrl ?: "",
+                        role = bw?.type ?: "",
+                        teamLogoUrl = if (bw?.teamId == matchData.homeTeam.id) matchData.homeTeam.logoUrl else matchData.awayTeam.logoUrl,
+                        onPlayerClick = { bw?.let { onPlayerClick(it.id) } }
+                    )
+                }
+
+                // Partnership & Last Wicket badge inside the card - aligned like Home Screen
+                val partnership = currentInning?.partnership
+                val lastWkt = currentInning?.fallOfWickets?.lastOrNull()
+                val badgeText =
+                    "P'ship : ${partnership?.totalRuns ?: 0}(${partnership?.totalBalls ?: 0}) | Last Wkt : ${lastWkt?.playerName ?: "N/A"} ${lastWkt?.runsAtFall ?: 0}(${lastWkt?.over ?: ""})"
+
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    color = Color(0xFF2C2C2E),
+                    shape = RoundedCornerShape(
+                        topStart = 12.dp,
+                        topEnd = 12.dp,
+                        bottomStart = 0.dp,
+                        bottomEnd = 0.dp
+                    )
+                ) {
+                    @Suppress("UNUSED_VARIABLE")
+                    val currentText = badgeText
+                    Text(
+                        badgeText,
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 11.sp,
+                        fontFamily = GilroyFontFamily,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PlayerInfo(
+    name: String,
+    score: String,
+    detail: String,
+    isOnStrike: Boolean,
+    imageUrl: String,
+    role: String = "",
+    teamLogoUrl: String = "",
+    onPlayerClick: () -> Unit = {},
+) {
+    @Suppress("UNUSED_VARIABLE")
+    val arrangement = Arrangement.Center
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(90.dp)
+            .clickable { onPlayerClick() }
+    ) {
+        Box {
+            Box(modifier = Modifier.size(65.dp)) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                    error = painterResource(id = if (role.contains("Bowl", ignoreCase = true)) R.drawable.bowler else R.drawable.batsman)
+                )
+                // Scorecard-style vertical gradient overlay
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.verticalGradient(
+                                0.0f to Color.Transparent,
+                                0.6f to Color.Black.copy(alpha = 0.1f),
+                                1.0f to Color.Black.copy(alpha = 0.5f)
+                            )
+                        )
+                )
+            }
+            
+            // Team Flag / Nationality Overlay
+            if (teamLogoUrl.isNotEmpty()) {
+                AsyncImage(
+                    model = teamLogoUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 2.dp, y = 2.dp),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            if (isOnStrike) {
+                Text(
+                    text = "🏏",
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 6.dp, y = (-2).dp),
+                    fontSize = 16.sp
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        @Suppress("UNUSED_VARIABLE")
+        val displayName = name
+        Text(
+            name,
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = GilroyFontFamily,
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.Center) {
+            Text(
+                score,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = GilroyFontFamily
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                detail,
+                color = TextGray,
+                fontSize = 10.sp,
+                fontFamily = GilroyFontFamily,
+                modifier = Modifier.padding(bottom = 1.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun RecentOverStats(recentOvers: List<OverSummary>) {
+    val scrollState = rememberScrollState()
+
+    // Auto-scroll to the end (latest overs on the right)
+    LaunchedEffect(recentOvers) {
+        scrollState.animateScrollTo(scrollState.maxValue)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(scrollState)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        if (recentOvers.isEmpty()) {
+            Text(
+                "Recent Balls:",
+                color = Color.White,
+                fontSize = 14.sp,
+                fontFamily = GilroyFontFamily
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("--", color = TextGray, fontSize = 12.sp, fontFamily = GilroyFontFamily)
+        } else {
+            recentOvers.forEach { over ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Ov ${over.overNumber}",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 11.sp,
+                            fontFamily = GilroyFontFamily
+                        )
+                        Text(
+                            text = "(${over.totalRuns}-${over.totalWickets})",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = GilroyFontFamily
+                        )
+                    }
+                    over.balls.forEach { ball ->
+                        BallStat(ball.displayText, ball.displayColor)
+                    }
+                    if (over.isCompleted) {
+                        Box(
+                            modifier = Modifier
+                                .height(24.dp)
+                                .width(1.dp)
+                                .background(Color.White.copy(alpha = 0.1f))
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BallStat(text: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(color),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun DetailTabs(tabs: List<String>, selectedIndex: Int, onTabSelected: (Int) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.SpaceAround,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        tabs.forEachIndexed { index, title ->
+            val isSelected = selectedIndex == index
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .clickable { onTabSelected(index) }
+                    .padding(horizontal = 12.dp)
+            ) {
+                Text(
+                    text = title,
+                    color = if (isSelected) Color(0xFF00BFA5) else Color.White,
+                    fontSize = 16.sp,
+                    fontFamily = GilroyFontFamily,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                )
+                if (isSelected) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .width(60.dp)
+                            .height(2.5.dp)
+                            .background(Color(0xFF00BFA5), RoundedCornerShape(2.dp))
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(8.5.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FieldPlayerItem(player: Player, onPlayerClick: (Int) -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(90.dp)
+            .clickable { onPlayerClick(player.id) }
+    ) {
+        Box(contentAlignment = Alignment.BottomCenter) {
+            Box {
+                AsyncImage(
+                    model = player.imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(65.dp),
+                    contentScale = ContentScale.Fit,
+                    error = painterResource(id = if (player.role.contains("Bowl", ignoreCase = true)) R.drawable.bowler else R.drawable.batsman)
+                )
+            }
+            Surface(
+                color = Color.Black,
+                shape = RoundedCornerShape(2.dp),
+                modifier = Modifier.offset(y = 2.dp)
+            ) {
+                Text(
+                    text = player.name,
+                    color = Color.White,
+                    fontSize = 8.sp,
+                    fontFamily = GilroyFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+    }
+}
+
+@Composable
+fun SquadView(teamName: String, players: List<Player>, onPlayerClick: (Int) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Dark title box attached to top of field
+        Surface(
+            color = Color(0xFF1E1E1E),
+            shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+            modifier = Modifier.width(240.dp) // Narrower title box like in screenshot
+        ) {
+            Text(
+                text = teamName,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                fontFamily = GilroyFontFamily,
+                modifier = Modifier.padding(vertical = 8.dp),
+                textAlign = TextAlign.Center
+            )
+        }
+
+        // Field Background
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.team_bg),
+                contentDescription = null,
+                modifier = Modifier.matchParentSize(),
+                contentScale = ContentScale.FillBounds
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 32.dp), // More vertical padding for spacing
+                verticalArrangement = Arrangement.spacedBy(20.dp), // Increased gap between rows
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (players.isEmpty()) {
+                    Text(
+                        "No players available",
+                        color = Color.White.copy(0.5f),
+                        modifier = Modifier.padding(40.dp)
+                    )
+                } else {
+                    // formation: 3, 3, 3, 2 (Dream11 style)
+                    val rows = listOf(3, 3, 3, 2)
+                    var index = 0
+                    rows.forEach { count ->
+                        val rowPlayers = players.drop(index).take(count)
+                        if (rowPlayers.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                rowPlayers.forEach { FieldPlayerItem(it, onPlayerClick) }
+                            }
+                        }
+                        index += count
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MatchInfoTable(info: MatchInfo?) {
+    if (info == null) return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+    ) {
+        Text(
+            text = "Match Info",
+            color = Color.White,
+            fontSize = 18.sp,
+            fontFamily = GilroyFontFamily,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        InfoRow("Match", "${info.team1Short} vs ${info.team2Short}, ${info.date}")
+        InfoRow("Series", "International Tour")
+        InfoRow("Date", info.date)
+        InfoRow("Toss", info.toss ?: "TBA")
+        InfoRow("Venue", info.venue)
+    }
+}
+
+@Composable
+fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            color = TextGray,
+            fontSize = 13.sp,
+            fontFamily = GilroyFontFamily,
+            modifier = Modifier.width(100.dp)
+        )
+        Text(
+            text = value,
+            color = Color.White,
+            fontSize = 13.sp,
+            fontFamily = GilroyFontFamily,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+fun CommentaryItemFromApi(ball: CommentaryEntry.BallCommentary) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(ball.color),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = ball.ballResult,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = ball.over,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    fontFamily = GilroyFontFamily
+                )
+                @Suppress("UNUSED_VARIABLE")
+                val currentTitle = ball.title
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = ball.title,
+                    color = Color.White,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 15.sp,
+                    fontFamily = GilroyFontFamily
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = ball.description,
+                color = TextGray,
+                fontSize = 13.sp,
+                fontFamily = GilroyFontFamily,
+                lineHeight = 18.sp
+            )
+            
+            val validBadges = listOfNotNull(
+                ball.length?.takeIf { it != "Null" && it.isNotEmpty() }?.let { "Length" to it.formatIdentifier() },
+                ball.line?.takeIf { it != "Null" && it.isNotEmpty() }?.let { "Line" to it.formatIdentifier() },
+                ball.shotType?.takeIf { it != "Null" && it.isNotEmpty() }?.let { "Shot" to it.formatIdentifier() },
+                ball.fieldingPosition?.takeIf { it != "Null" && it.isNotEmpty() }?.let { "To" to it.formatIdentifier() }
+            )
+            
+            if (validBadges.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    validBadges.forEach { (label, value) ->
+                        BadgeItem(label, value)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun OverScorecardItem(entry: CommentaryEntry.OverScorecard) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1E)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "End of Over ${entry.overNumber}",
+                    color = Color(0xFF00BFA5),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = "Score: ${entry.totalScore}",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = Color.White.copy(0.1f)
+            )
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    entry.batsman1?.let { b ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(b.name, color = Color.White, fontSize = 12.sp)
+                            Text("${b.runs}(${b.balls})", color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    entry.batsman2?.let { b ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(b.name, color = Color.White, fontSize = 12.sp)
+                            Text("${b.runs}(${b.balls})", color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .width(1.dp)
+                        .height(32.dp)
+                        .background(Color.White.copy(0.1f))
+                )
+
+                Column(modifier = Modifier.weight(0.8f)) {
+                    entry.bowler?.let { bw ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(bw.name, color = Color.White, fontSize = 12.sp)
+                            Text("${bw.wickets}-${bw.runs}", color = Color.White, fontSize = 12.sp)
+                        }
+                        Text("${bw.overs} Overs", color = TextGray, fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BadgeItem(label: String, value: String) {
+    Surface(
+        color = Color(0xFF2C2C2E),
+        shape = RoundedCornerShape(4.dp),
+        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "$label: ",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 10.sp,
+                fontFamily = GilroyFontFamily
+            )
+            Text(
+                text = value,
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                fontFamily = GilroyFontFamily
+            )
+        }
+    }
+}
+
+fun String.formatIdentifier(): String {
+    // e.g "LengthBall" -> "Length Ball", "ShortFineLeg" -> "Short Fine Leg"
+    return this.replace(Regex("([a-z])([A-Z]+)"), "$1 $2")
+}
+
+// UI Data Models for Scorecard
+data class UIInningsData(
+    val teamName: String,
+    val teamShort: String,
+    val runs: Int,
+    val wickets: Int,
+    val overs: String,
+    val extras: Int,
+    val batsmen: List<UIBatsmanData>,
+    val bowlers: List<UIBowlerData>
+)
+
+data class UIBatsmanData(
+    val id: Int,
+    val name: String,
+    val runs: Int,
+    val balls: Int,
+    val fours: Int,
+    val sixes: Int,
+    val strikeRate: String,
+    val dismissal: String,
+    val isOut: Boolean,
+    val isOnStrike: Boolean
+)
+
+data class UIBowlerData(
+    val id: Int,
+    val name: String,
+    val overs: String,
+    val maidens: Int,
+    val runs: Int,
+    val wickets: Int,
+    val economy: String
+)
