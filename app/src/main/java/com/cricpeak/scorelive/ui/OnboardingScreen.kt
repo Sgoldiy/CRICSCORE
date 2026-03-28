@@ -26,6 +26,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cricpeak.scorelive.R
+import com.cricpeak.scorelive.ads.AdsState
+import com.cricpeak.scorelive.ads.NativeAdViewHorizontal
 import com.cricpeak.scorelive.ui.theme.DarkBackground
 import com.cricpeak.scorelive.ui.theme.GilroyFontFamily
 import com.cricpeak.scorelive.ui.theme.RadialTeal
@@ -39,7 +41,7 @@ data class OnboardingData(
 )
 
 @Composable
-fun OnboardingScreen(onFinish: () -> Unit) {
+fun OnboardingScreen(onFinish: () -> Unit, adsState: AdsState? = null) {
     val onboardingItems = listOf(
         OnboardingData(
             R.drawable.intro_1,
@@ -90,14 +92,14 @@ fun OnboardingScreen(onFinish: () -> Unit) {
                     .fillMaxWidth()
                     .weight(1f)
             ) { page ->
-                OnboardingPage(onboardingItems[page])
+                OnboardingPage(onboardingItems[page], page, adsState)
             }
 
             // Bottom section
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 48.dp, start = 32.dp, end = 32.dp),
+                    .padding(bottom = 16.dp, start = 32.dp, end = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Page Indicator
@@ -119,7 +121,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
                     }
                 }
 
-                Spacer(modifier = Modifier.height(40.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
                 // Next Button
                 Button(
@@ -154,11 +156,11 @@ fun OnboardingScreen(onFinish: () -> Unit) {
 }
 
 @Composable
-fun OnboardingPage(data: OnboardingData) {
+fun OnboardingPage(data: OnboardingData, pageIndex: Int, adsState: AdsState? = null) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = 40.dp),
+            .padding(top = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Image(
@@ -166,17 +168,17 @@ fun OnboardingPage(data: OnboardingData) {
             contentDescription = null,
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.55f)
+                .fillMaxHeight(0.4f)
                 .padding(horizontal = 20.dp),
             contentScale = ContentScale.Fit
         )
         
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         
         Text(
             text = data.titlePart1,
             color = Color.White,
-            fontSize = 32.sp,
+            fontSize = 28.sp,
             fontWeight = FontWeight.Medium,
             fontFamily = GilroyFontFamily,
             textAlign = TextAlign.Center
@@ -184,25 +186,50 @@ fun OnboardingPage(data: OnboardingData) {
         Text(
             text = data.titlePart2,
             color = Color.White,
-            fontSize = 32.sp,
+            fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = GilroyFontFamily,
             textAlign = TextAlign.Center
         )
         
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         
         Text(
             text = data.description,
             color = Color.White.copy(alpha = 0.7f),
-            fontSize = 15.sp,
+            fontSize = 14.sp,
             fontFamily = GilroyFontFamily,
             textAlign = TextAlign.Center,
-            lineHeight = 22.sp,
+            lineHeight = 20.sp,
             minLines = 3,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.width(300.dp)
         )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // Native Ads on Screen 1 (Index 0) and Screen 3 (Index 2)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(210.dp) // Fixed height to match NativeAdViewHorizontal
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            when (pageIndex) {
+                0 -> {
+                    if (adsState?.native_ob_1?.enabled == true && adsState.native_ob_1.ads_unit.isNotEmpty()) {
+                        NativeAdViewHorizontal(adUnitId = adsState.native_ob_1.ads_unit)
+                    }
+                }
+                2 -> {
+                    if (adsState?.native_ob_3?.enabled == true && adsState.native_ob_3.ads_unit.isNotEmpty()) {
+                        NativeAdViewHorizontal(adUnitId = adsState.native_ob_3.ads_unit)
+                    }
+                }
+            }
+        }
     }
 }

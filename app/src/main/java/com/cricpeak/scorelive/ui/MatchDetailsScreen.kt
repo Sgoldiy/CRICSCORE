@@ -1,17 +1,13 @@
 package com.cricpeak.scorelive.ui
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import android.app.Activity
-import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -19,14 +15,43 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,17 +71,31 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.cricpeak.scorelive.R
 import com.cricpeak.scorelive.ads.AdInterstitialManager
+import com.cricpeak.scorelive.ads.AdRewardManager
 import com.cricpeak.scorelive.ads.AdsState
 import com.cricpeak.scorelive.ads.AdsViewModel
 import com.cricpeak.scorelive.ads.BannerAdView
-import com.cricpeak.scorelive.ui.apicallfiles.*
+import com.cricpeak.scorelive.ads.RewardPrefs
+import com.cricpeak.scorelive.ui.apicallfiles.CommentaryEntry
+import com.cricpeak.scorelive.ui.apicallfiles.CommentsData
+import com.cricpeak.scorelive.ui.apicallfiles.CommentsState
+import com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsData
+import com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsState
+import com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsViewModel
+import com.cricpeak.scorelive.ui.apicallfiles.MatchInfo
+import com.cricpeak.scorelive.ui.apicallfiles.OverSummary
+import com.cricpeak.scorelive.ui.apicallfiles.ScoreAnimation
+import com.cricpeak.scorelive.ui.apicallfiles.getBattingTeam
+import com.cricpeak.scorelive.ui.apicallfiles.getFirstInning
+import com.cricpeak.scorelive.ui.apicallfiles.getSampleInningsData
+import com.cricpeak.scorelive.ui.apicallfiles.getSecondInning
+import com.cricpeak.scorelive.ui.apicallfiles.toUIInningsData
+import com.cricpeak.scorelive.ui.components.RewardPolicyDialog
 import com.cricpeak.scorelive.ui.theme.CardBackground
 import com.cricpeak.scorelive.ui.theme.DarkBackground
 import com.cricpeak.scorelive.ui.theme.GilroyFontFamily
 import com.cricpeak.scorelive.ui.theme.RadialTeal
 import com.cricpeak.scorelive.ui.theme.TextGray
-import kotlinx.coroutines.delay
-import kotlin.let
 
 // Data class for Player from API
 data class Player(
@@ -66,7 +105,7 @@ data class Player(
     val role: String = "",
     val teamId: Int = 0,
     val battingStyle: String = "N/A",
-    val bowlingStyle: String = "N/A"
+    val bowlingStyle: String = "N/A",
 )
 
 
@@ -84,18 +123,31 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
     // Initialize ViewModels
     val viewModel: MatchDetailsViewModel = viewModel()
     val adsViewModel: AdsViewModel = viewModel()
-    
+
     val matchDetailsState by viewModel.matchDetailsState.collectAsState()
     val commentsState by viewModel.commentsState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val scoreAnimation by viewModel.scoreAnimationState.collectAsState()
     val adsState: AdsState by adsViewModel.adsState.collectAsState()
-    
+
+    // Reward Ad States
+    var showRewardPolicyDialog by remember { mutableStateOf(false) }
+    var rewardPendingOver by remember { mutableStateOf<Int?>(null) }
+
+    // Free Overs Tracking Logic
+    var unlockedUntilOver by remember { mutableIntStateOf(0) }
+    var lastAuthorizedOver by remember { mutableIntStateOf(0) }
+
     // Global Ad pre-loading for Match Details
     LaunchedEffect(adsState) {
         val adConfig = adsState.inter_details
         if (adConfig.enabled && adConfig.ads_unit.isNotEmpty()) {
             AdInterstitialManager.MatchDetailsAdManager.loadAd(context, adConfig.ads_unit)
+        }
+
+        val rewardLiveConfig = adsState.reward_live
+        if (rewardLiveConfig.enabled && rewardLiveConfig.ads_unit.isNotEmpty()) {
+            AdRewardManager.loadAd(context, rewardLiveConfig.ads_unit)
         }
     }
 
@@ -104,7 +156,7 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
 
         if (selectedTabIndex != previousTabIndex && activity != null) {
             val adConfig = adsState.inter_details
-            
+
             if (adConfig.enabled && adConfig.ads_unit.isNotEmpty()) {
                 AdInterstitialManager.MatchDetailsAdManager.showAdIfAvailable(
                     activity = activity,
@@ -142,9 +194,9 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
 
     // Update UI when API data arrives
     LaunchedEffect(matchDetailsState) {
-        when (matchDetailsState) {
+        when (val state = matchDetailsState) {
             is MatchDetailsState.Success -> {
-                val matchData = (matchDetailsState as MatchDetailsState.Success).matchData
+                val matchData = state.matchData
 
                 // Map API data to MatchInfo format for existing UI
                 matchInfoState.value = MatchInfo(
@@ -185,31 +237,39 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                 // Extract squads using the Players list from API
                 homeTeamPlayers = matchData.players
                     .filter { it.teamId == matchData.homeTeam.id }
-                    .map { 
+                    .map {
                         Player(
-                            it.id, 
-                            it.displayName, 
-                            it.imageUrl ?: "", 
-                            it.type ?: "", 
+                            it.id,
+                            it.displayName,
+                            it.imageUrl ?: "",
+                            it.type ?: "",
                             it.teamId,
                             it.battingStyle ?: it.battingHand ?: "N/A",
                             it.bowlingStyle ?: it.bowlingType ?: "N/A"
-                        ) 
+                        )
                     }
 
                 awayTeamPlayers = matchData.players
                     .filter { it.teamId == matchData.awayTeam.id }
-                    .map { 
+                    .map {
                         Player(
-                            it.id, 
-                            it.displayName, 
-                            it.imageUrl ?: "", 
-                            it.type ?: "", 
+                            it.id,
+                            it.displayName,
+                            it.imageUrl ?: "",
+                            it.type ?: "",
                             it.teamId,
                             it.battingStyle ?: it.battingHand ?: "N/A",
                             it.bowlingStyle ?: it.bowlingType ?: "N/A"
-                        ) 
+                        )
                     }
+
+                // Set initial "current" over as authorized if it's the first load
+                if (lastAuthorizedOver == 0) {
+                    val currentOver =
+                        matchData.innings.lastOrNull()?.oversBowled?.toDoubleOrNull()?.toInt() ?: 0
+                    lastAuthorizedOver = currentOver
+                    unlockedUntilOver = currentOver + 1 // +1 free over logic
+                }
             }
 
             is MatchDetailsState.Loading -> {}
@@ -324,7 +384,7 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                         fontFamily = GilroyFontFamily
                                     )
                                 }
-                                
+
                                 IconButton(
                                     onClick = onBackClick,
                                     modifier = Modifier
@@ -371,11 +431,13 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                         }
 
                         item { Spacer(modifier = Modifier.height(8.dp)) }
-                        
+
                         // 1. Match Details Banner Ad
                         if (adsState.match_details_banner.enabled && adsState.match_details_banner.ads_unit.isNotEmpty()) {
                             item {
-                                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                                Box(modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)) {
                                     BannerAdView(adUnitId = adsState.match_details_banner.ads_unit)
                                 }
                             }
@@ -424,8 +486,10 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                     middleName = p.middleName,
                                                                     role = p.type ?: "Player",
                                                                     imageUrl = p.imageUrl ?: "",
-                                                                    battingStyle = p.battingStyle ?: p.battingHand ?: "N/A",
-                                                                    bowlingStyle = p.bowlingStyle ?: p.bowlingType ?: "N/A",
+                                                                    battingStyle = p.battingStyle
+                                                                        ?: p.battingHand ?: "N/A",
+                                                                    bowlingStyle = p.bowlingStyle
+                                                                        ?: p.bowlingType ?: "N/A",
                                                                     dob = p.dob,
                                                                     birthPlace = p.birthPlace,
                                                                     height = p.height,
@@ -436,7 +500,7 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                         }
                                                 }
                                             )
-                                            
+
                                             // 6. Teams Banner Ad - Between two teams
                                             if (adsState.teams_banner.enabled && adsState.teams_banner.ads_unit.isNotEmpty()) {
                                                 Box(
@@ -447,7 +511,7 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                     BannerAdView(adUnitId = adsState.teams_banner.ads_unit)
                                                 }
                                             }
-                                            
+
                                             Spacer(modifier = Modifier.height(24.dp))
                                             SquadView(
                                                 "${matchData.awayTeam.name} Squad",
@@ -464,8 +528,10 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                     middleName = p.middleName,
                                                                     role = p.type ?: "Player",
                                                                     imageUrl = p.imageUrl ?: "",
-                                                                    battingStyle = p.battingStyle ?: p.battingHand ?: "N/A",
-                                                                    bowlingStyle = p.bowlingStyle ?: p.bowlingType ?: "N/A",
+                                                                    battingStyle = p.battingStyle
+                                                                        ?: p.battingHand ?: "N/A",
+                                                                    bowlingStyle = p.bowlingStyle
+                                                                        ?: p.bowlingType ?: "N/A",
                                                                     dob = p.dob,
                                                                     birthPlace = p.birthPlace,
                                                                     height = p.height,
@@ -519,42 +585,65 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                 }
 
                                                 is CommentsState.Success -> {
-                                                    // Innings Selection with Team Short Names (Unified UI with Scorecard)
+                                                    // Innings Selection
                                                     if (commentsData.totalInnings > 0) {
                                                         Row(
                                                             modifier = Modifier
                                                                 .fillMaxWidth()
-                                                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                                                                .padding(
+                                                                    horizontal = 16.dp,
+                                                                    vertical = 16.dp
+                                                                ),
                                                             horizontalArrangement = Arrangement.Center,
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
                                                             for (i in 1..commentsData.totalInnings) {
-                                                                val isSelected = commentsData.currentInning == i
-                                                                val inningData = matchData.innings.getOrNull(i - 1)
-                                                                val teamShortName = if (inningData != null) {
-                                                                    matchData.getBattingTeam(inningData)?.shortName ?: "T$i"
-                                                                } else "T$i"
+                                                                val isSelected =
+                                                                    commentsData.currentInning == i
+                                                                val inningData =
+                                                                    matchData.innings.getOrNull(i - 1)
+                                                                val teamShortName =
+                                                                    if (inningData != null) {
+                                                                        matchData.getBattingTeam(
+                                                                            inningData
+                                                                        )?.shortName ?: "T$i"
+                                                                    } else "T$i"
 
-                                                                val displayLabel = if (matchData.gameType == "TEST") {
-                                                                    "$teamShortName (${(i + 1) / 2})"
-                                                                } else {
-                                                                    teamShortName
-                                                                }
+                                                                val displayLabel =
+                                                                    if (matchData.gameType == "TEST") {
+                                                                        "$teamShortName (${(i + 1) / 2})"
+                                                                    } else {
+                                                                        teamShortName
+                                                                    }
 
                                                                 val currentMatchId = matchId
                                                                 Card(
                                                                     modifier = Modifier
                                                                         .padding(horizontal = 4.dp)
                                                                         .width(130.dp)
-                                                                        .clickable { viewModel.loadComments(currentMatchId, i) },
+                                                                        .clickable {
+                                                                            viewModel.loadComments(
+                                                                                currentMatchId,
+                                                                                i
+                                                                            )
+                                                                        },
                                                                     colors = CardDefaults.cardColors(
-                                                                        containerColor = if (isSelected) Color(0xFF00BFA5) else CardBackground
+                                                                        containerColor = if (isSelected) Color(
+                                                                            0xFF00BFA5
+                                                                        ) else CardBackground
                                                                     ),
                                                                     shape = RoundedCornerShape(12.dp),
-                                                                    border = if (!isSelected) BorderStroke(1.dp, Color.White.copy(0.1f)) else null
+                                                                    border = if (!isSelected) BorderStroke(
+                                                                        1.dp,
+                                                                        Color.White.copy(0.1f)
+                                                                    ) else null
                                                                 ) {
                                                                     Column(
-                                                                        modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth(),
+                                                                        modifier = Modifier
+                                                                            .padding(
+                                                                                vertical = 8.dp
+                                                                            )
+                                                                            .fillMaxWidth(),
                                                                         horizontalAlignment = Alignment.CenterHorizontally,
                                                                         verticalArrangement = Arrangement.Center
                                                                     ) {
@@ -586,40 +675,57 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                             when (entry) {
                                                                 is CommentaryEntry.BallCommentary -> {
                                                                     CommentaryItemFromApi(entry)
-
-                                                                    val currentBall =
-                                                                        entry.over.substringAfter(".")
-                                                                            .toIntOrNull() ?: 1
-                                                                    if (currentBall == 1) { // First ball of over (last in UI order for that over)
-                                                                        Box(
-                                                                            modifier = Modifier
-                                                                                .fillMaxWidth()
-                                                                                .padding(
-                                                                                    vertical = 12.dp,
-                                                                                    horizontal = 24.dp
-                                                                                )
-                                                                                .height(1.dp)
-                                                                                .background(
-                                                                                    Brush.horizontalGradient(
-                                                                                        colors = listOf(
-                                                                                            Color.Transparent,
-                                                                                            Color.White.copy(
-                                                                                                0.1f
-                                                                                            ),
-                                                                                            Color.Transparent
-                                                                                        )
-                                                                                    )
-                                                                                )
-                                                                        )
-                                                                    }
                                                                 }
 
                                                                 is CommentaryEntry.OverScorecard -> {
-                                                                    OverScorecardItem(entry)
-                                                                    
+                                                                    // REWARDED ADS LOGIC FOR OVERS
+                                                                    val isLocked =
+                                                                        entry.overNumber > unlockedUntilOver
+
+                                                                    if (isLocked) {
+                                                                        LockedOverItem(
+                                                                            overNumber = entry.overNumber,
+                                                                            onUnlockClick = {
+                                                                                val rewardConfig =
+                                                                                    adsState.reward_live
+                                                                                if (rewardConfig.enabled && rewardConfig.ads_unit.isNotEmpty()) {
+                                                                                    if (!RewardPrefs.isPolicyAccepted(
+                                                                                            context
+                                                                                        )
+                                                                                    ) {
+                                                                                        rewardPendingOver =
+                                                                                            entry.overNumber
+                                                                                        showRewardPolicyDialog =
+                                                                                            true
+                                                                                    } else {
+                                                                                        if (activity != null) {
+                                                                                            AdRewardManager.showAd(
+                                                                                                activity = activity,
+                                                                                                adUnitId = rewardConfig.ads_unit,
+                                                                                                onRewardEarned = {
+                                                                                                    unlockedUntilOver =
+                                                                                                        entry.overNumber + 1 // Unlock next 2 overs (+ current + 1 more)
+                                                                                                }
+                                                                                            )
+                                                                                        }
+                                                                                    }
+                                                                                } else {
+                                                                                    unlockedUntilOver =
+                                                                                        entry.overNumber + 1
+                                                                                }
+                                                                            }
+                                                                        )
+                                                                    } else {
+                                                                        OverScorecardItem(entry)
+                                                                    }
+
                                                                     // 3. Overs Banner Ad - After every 2 overs
                                                                     if (entry.overNumber % 2 == 0 && adsState.overs_banner.enabled && adsState.overs_banner.ads_unit.isNotEmpty()) {
-                                                                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
+                                                                        Box(
+                                                                            modifier = Modifier
+                                                                                .fillMaxWidth()
+                                                                                .padding(vertical = 16.dp)
+                                                                        ) {
                                                                             BannerAdView(adUnitId = adsState.overs_banner.ads_unit)
                                                                         }
                                                                     }
@@ -649,8 +755,82 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
             }
         }
 
-        // Animation Overlay - Commented out since we're using inline badge now
-        // MatchEventOverlay(scoreAnimation, onDismiss = { viewModel.clearAnimation() })
+        // Reward Policy Dialog
+        if (showRewardPolicyDialog) {
+            RewardPolicyDialog(
+                onAccept = {
+                    RewardPrefs.setPolicyAccepted(context, true)
+                    showRewardPolicyDialog = false
+                    val rewardConfig =
+                        if (rewardPendingOver != null) adsState.reward_live else adsState.reward_ai
+                    if (activity != null && rewardConfig.enabled && rewardConfig.ads_unit.isNotEmpty()) {
+                        AdRewardManager.showAd(
+                            activity = activity,
+                            adUnitId = rewardConfig.ads_unit,
+                            onRewardEarned = {
+                                if (rewardPendingOver != null) {
+                                    unlockedUntilOver = rewardPendingOver!! + 1
+                                    rewardPendingOver = null
+                                }
+                            }
+                        )
+                    }
+                },
+                onDismiss = {
+                    showRewardPolicyDialog = false
+                    rewardPendingOver = null
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun LockedOverItem(overNumber: Int, onUnlockClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .clickable { onUnlockClick() },
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1E).copy(alpha = 0.5f)),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(24.dp)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("🔒", fontSize = 24.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Over $overNumber is locked",
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "Watch a short ad to unlock next 2 overs",
+                color = TextGray,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = onUnlockClick,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00BFA5)),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.height(36.dp)
+            ) {
+                Text(
+                    "Unlock Now",
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+        }
     }
 }
 
@@ -805,89 +985,6 @@ fun DetailScoreCard(matchData: MatchDetailsData, scoreAnimation: ScoreAnimation)
 }
 
 @Composable
-fun MatchEventOverlay(scoreAnimation: ScoreAnimation, onDismiss: () -> Unit) {
-    // Local state to handle the 4s duration and animation phases
-    var showOverlay by remember { mutableStateOf(false) }
-    var currentType by remember { mutableStateOf(AnimationType.NONE) }
-    var phase by remember { mutableStateOf(0) } // 0: Idle, 1: Enter, 2: Hold, 3: Exit
-
-    // Trigger animation when scoreAnimation changes
-    LaunchedEffect(scoreAnimation) {
-        if (scoreAnimation.type != AnimationType.NONE && (System.currentTimeMillis() - scoreAnimation.timestamp) < 2000) {
-            currentType = scoreAnimation.type
-            showOverlay = true
-            phase = 1
-            delay(1000)
-            phase = 2
-            delay(2000)
-            phase = 3
-            delay(1000)
-            phase = 0
-            showOverlay = false
-            currentType = AnimationType.NONE
-            onDismiss()
-        }
-    }
-
-    if (showOverlay) {
-        val overlayColor = when (currentType) {
-            AnimationType.FOUR -> Color(0xFFF57C00) // Orange
-            AnimationType.SIX -> Color(0xFF7B1FA2)  // Purple
-            AnimationType.WICKET -> Color(0xFFD32F2F) // Red
-            else -> Color.Transparent
-        }
-
-        val eventText = when (currentType) {
-            AnimationType.FOUR -> "FOUR"
-            AnimationType.SIX -> "SIX"
-            AnimationType.WICKET -> "WICKET"
-            else -> ""
-        }
-
-        // Background Slide Animation
-        val offsetX by animateFloatAsState(
-            targetValue = when (phase) {
-                1 -> 0f // Slide in from right (start at width, move to 0)
-                2 -> 0f // Hold at 0
-                3 -> -1f // Slide out to left (0 to -width)
-                else -> 1f // Initial state (at width)
-            },
-            animationSpec = tween(durationMillis = 1000, easing = LinearOutSlowInEasing),
-            label = "OverlaySlide"
-        )
-
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val width = constraints.maxWidth.toFloat()
-            
-            // Background Overlay
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .offset(x = (width * offsetX).dp)
-                    .background(overlayColor),
-                contentAlignment = Alignment.Center
-            ) {
-                // Text Animation
-                AnimatedVisibility(
-                    visible = phase == 2,
-                    enter = fadeIn(tween(300)) + scaleIn(initialScale = 0.8f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)),
-                    exit = fadeOut(tween(300))
-                ) {
-                    Text(
-                        text = eventText,
-                        color = Color.White,
-                        fontSize = 48.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = GilroyFontFamily,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun ScoreRowDetail(name: String, score: String, overs: String, logoUrl: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -900,8 +997,7 @@ fun ScoreRowDetail(name: String, score: String, overs: String, logoUrl: String) 
                 contentDescription = null,
                 modifier = Modifier
                     .size(38.dp)
-                    .clip(CircleShape)
-                ,
+                    .clip(CircleShape),
                 contentScale = ContentScale.Crop,
                 error = painterResource(id = R.drawable.ic_launcher_foreground)
             )
@@ -987,9 +1083,10 @@ fun PlayerPerformanceCard(matchData: MatchDetailsData, onPlayerClick: (Int) -> U
                 ) {
                     val b1 = batsman1?.let { playersMap[it.playerId] }
                     PlayerInfo(
-                        name = b1?.displayName 
-                            ?: b1?.let { "${it.firstName ?: ""} ${it.lastName ?: ""}".trim() }.takeIf { it?.isNotEmpty() == true }
-                            ?: batsman1?.fullName?.split(" ")?.lastOrNull() 
+                        name = b1?.displayName
+                            ?: b1?.let { "${it.firstName ?: ""} ${it.lastName ?: ""}".trim() }
+                                .takeIf { it?.isNotEmpty() == true }
+                            ?: batsman1?.fullName?.split(" ")?.lastOrNull()
                             ?: "Batsman",
                         score = "${batsman1?.runs ?: 0}",
                         detail = "(${batsman1?.balls ?: 0})",
@@ -1009,9 +1106,10 @@ fun PlayerPerformanceCard(matchData: MatchDetailsData, onPlayerClick: (Int) -> U
 
                     val b2 = batsman2?.let { playersMap[it.playerId] }
                     PlayerInfo(
-                        name = b2?.displayName 
-                            ?: b2?.let { "${it.firstName ?: ""} ${it.lastName ?: ""}".trim() }.takeIf { it?.isNotEmpty() == true }
-                            ?: batsman2?.fullName?.split(" ")?.lastOrNull() 
+                        name = b2?.displayName
+                            ?: b2?.let { "${it.firstName ?: ""} ${it.lastName ?: ""}".trim() }
+                                .takeIf { it?.isNotEmpty() == true }
+                            ?: batsman2?.fullName?.split(" ")?.lastOrNull()
                             ?: "Batsman",
                         score = "${batsman2?.runs ?: 0}",
                         detail = "(${batsman2?.balls ?: 0})",
@@ -1031,9 +1129,10 @@ fun PlayerPerformanceCard(matchData: MatchDetailsData, onPlayerClick: (Int) -> U
 
                     val bw = bowler?.let { playersMap[it.playerId] }
                     PlayerInfo(
-                        name = bw?.displayName 
-                            ?: bw?.let { "${it.firstName ?: ""} ${it.lastName ?: ""}".trim() }.takeIf { it?.isNotEmpty() == true }
-                            ?: bowler?.fullName?.split(" ")?.lastOrNull() 
+                        name = bw?.displayName
+                            ?: bw?.let { "${it.firstName ?: ""} ${it.lastName ?: ""}".trim() }
+                                .takeIf { it?.isNotEmpty() == true }
+                            ?: bowler?.fullName?.split(" ")?.lastOrNull()
                             ?: "Bowler",
                         score = "${bowler?.wickets ?: 0}-${bowler?.runs ?: 0}",
                         detail = "(${bowler?.overs ?: "0"})",
@@ -1061,8 +1160,6 @@ fun PlayerPerformanceCard(matchData: MatchDetailsData, onPlayerClick: (Int) -> U
                         bottomEnd = 0.dp
                     )
                 ) {
-                    @Suppress("UNUSED_VARIABLE")
-                    val currentText = badgeText
                     Text(
                         badgeText,
                         color = Color.White.copy(alpha = 0.9f),
@@ -1087,8 +1184,6 @@ fun PlayerInfo(
     teamLogoUrl: String = "",
     onPlayerClick: () -> Unit = {},
 ) {
-    @Suppress("UNUSED_VARIABLE")
-    val arrangement = Arrangement.Center
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -1102,7 +1197,13 @@ fun PlayerInfo(
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit,
-                    error = painterResource(id = if (role.contains("Bowl", ignoreCase = true)) R.drawable.bowler else R.drawable.batsman)
+                    error = painterResource(
+                        id = if (role.contains(
+                                "Bowl",
+                                ignoreCase = true
+                            )
+                        ) R.drawable.bowler else R.drawable.batsman
+                    )
                 )
                 // Scorecard-style vertical gradient overlay
                 Box(
@@ -1117,7 +1218,7 @@ fun PlayerInfo(
                         )
                 )
             }
-            
+
             // Team Flag / Nationality Overlay
             if (teamLogoUrl.isNotEmpty()) {
                 AsyncImage(
@@ -1143,8 +1244,6 @@ fun PlayerInfo(
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
-        @Suppress("UNUSED_VARIABLE")
-        val displayName = name
         Text(
             name,
             color = Color.White,
@@ -1307,7 +1406,13 @@ fun FieldPlayerItem(player: Player, onPlayerClick: (Int) -> Unit) {
                     modifier = Modifier
                         .size(65.dp),
                     contentScale = ContentScale.Fit,
-                    error = painterResource(id = if (player.role.contains("Bowl", ignoreCase = true)) R.drawable.bowler else R.drawable.batsman)
+                    error = painterResource(
+                        id = if (player.role.contains(
+                                "Bowl",
+                                ignoreCase = true
+                            )
+                        ) R.drawable.bowler else R.drawable.batsman
+                    )
                 )
             }
             Surface(
@@ -1487,8 +1592,6 @@ fun CommentaryItemFromApi(ball: CommentaryEntry.BallCommentary) {
                     fontSize = 15.sp,
                     fontFamily = GilroyFontFamily
                 )
-                @Suppress("UNUSED_VARIABLE")
-                val currentTitle = ball.title
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = ball.title,
@@ -1506,14 +1609,18 @@ fun CommentaryItemFromApi(ball: CommentaryEntry.BallCommentary) {
                 fontFamily = GilroyFontFamily,
                 lineHeight = 18.sp
             )
-            
+
             val validBadges = listOfNotNull(
-                ball.length?.takeIf { it != "Null" && it.isNotEmpty() }?.let { "Length" to it.formatIdentifier() },
-                ball.line?.takeIf { it != "Null" && it.isNotEmpty() }?.let { "Line" to it.formatIdentifier() },
-                ball.shotType?.takeIf { it != "Null" && it.isNotEmpty() }?.let { "Shot" to it.formatIdentifier() },
-                ball.fieldingPosition?.takeIf { it != "Null" && it.isNotEmpty() }?.let { "To" to it.formatIdentifier() }
+                ball.length?.takeIf { it != "Null" && it.isNotEmpty() }
+                    ?.let { "Length" to it.formatIdentifier() },
+                ball.line?.takeIf { it != "Null" && it.isNotEmpty() }
+                    ?.let { "Line" to it.formatIdentifier() },
+                ball.shotType?.takeIf { it != "Null" && it.isNotEmpty() }
+                    ?.let { "Shot" to it.formatIdentifier() },
+                ball.fieldingPosition?.takeIf { it != "Null" && it.isNotEmpty() }
+                    ?.let { "To" to it.formatIdentifier() }
             )
-            
+
             if (validBadges.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
@@ -1642,7 +1749,6 @@ fun BadgeItem(label: String, value: String) {
 }
 
 fun String.formatIdentifier(): String {
-    // e.g "LengthBall" -> "Length Ball", "ShortFineLeg" -> "Short Fine Leg"
     return this.replace(Regex("([a-z])([A-Z]+)"), "$1 $2")
 }
 
@@ -1655,7 +1761,7 @@ data class UIInningsData(
     val overs: String,
     val extras: Int,
     val batsmen: List<UIBatsmanData>,
-    val bowlers: List<UIBowlerData>
+    val bowlers: List<UIBowlerData>,
 )
 
 data class UIBatsmanData(
@@ -1668,7 +1774,7 @@ data class UIBatsmanData(
     val strikeRate: String,
     val dismissal: String,
     val isOut: Boolean,
-    val isOnStrike: Boolean
+    val isOnStrike: Boolean,
 )
 
 data class UIBowlerData(
@@ -1678,5 +1784,5 @@ data class UIBowlerData(
     val maidens: Int,
     val runs: Int,
     val wickets: Int,
-    val economy: String
+    val economy: String,
 )

@@ -48,37 +48,43 @@ fun BannerAdView(adUnitId: String, modifier: Modifier = Modifier) {
     var isAdLoaded by remember { mutableStateOf(false) }
     var isAdFailed by remember { mutableStateOf(false) }
 
+    if (isAdFailed) {
+        return
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .wrapContentHeight(),
         contentAlignment = Alignment.Center
     ) {
-        if (!isAdLoaded && !isAdFailed) {
+        if (!isAdLoaded) {
             ShimmerBanner()
         }
 
-        if (!isAdFailed) {
-            AndroidView(
-                modifier = Modifier.fillMaxWidth(),
-                factory = { context ->
-                    AdView(context).apply {
-                        setAdSize(AdSize.BANNER)
-                        setAdUnitId(adUnitId)
-                        adListener = object : AdListener() {
-                            override fun onAdLoaded() {
-                                isAdLoaded = true
-                            }
-
-                            override fun onAdFailedToLoad(error: LoadAdError) {
-                                isAdFailed = true
-                            }
+        AndroidView(
+            modifier = Modifier.fillMaxWidth(),
+            factory = { context ->
+                AdView(context).apply {
+                    setAdSize(AdSize.BANNER)
+                    setAdUnitId(adUnitId)
+                    adListener = object : AdListener() {
+                        override fun onAdLoaded() {
+                            isAdLoaded = true
                         }
-                        loadAd(AdRequest.Builder().build())
+
+                        override fun onAdFailedToLoad(error: LoadAdError) {
+                            isAdFailed = true
+                            Log.e("BannerAdView", "Ad failed to load: ${error.message}")
+                        }
                     }
+                    loadAd(AdRequest.Builder().build())
                 }
-            )
-        }
+            },
+            onRelease = { adView ->
+                adView.destroy()
+            }
+        )
     }
 }
 

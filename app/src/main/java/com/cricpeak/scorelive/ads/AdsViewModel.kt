@@ -25,6 +25,15 @@ data class AdsState(
     val slider_big_native: AdConfig = AdConfig(),
     val inter_home: AdConfig = AdConfig(),
     val inter_details: AdConfig = AdConfig(),
+    val live_banner: AdConfig = AdConfig(),
+    val upcoming_banner: AdConfig = AdConfig(),
+    val completed_banner: AdConfig = AdConfig(),
+    val upcoming_live_banner: AdConfig = AdConfig(),
+    val exit_banner: AdConfig = AdConfig(),
+    val native_ob_1: AdConfig = AdConfig(),
+    val native_ob_3: AdConfig = AdConfig(),
+    val reward_ai: AdConfig = AdConfig(),
+    val reward_live: AdConfig = AdConfig(),
     val isLoaded: Boolean = false
 )
 
@@ -53,6 +62,21 @@ class AdsViewModel(application: Application) : AndroidViewModel(application) {
                         val homeInterstitial = snapshot.child("inter_home").getValue(AdConfig::class.java) ?: AdConfig()
                         val matchDetailsInterstitial = snapshot.child("inter_details").getValue(AdConfig::class.java) ?: AdConfig()
                         
+                        // New banners
+                        val liveBanner = snapshot.child("live_banner").getValue(AdConfig::class.java) ?: AdConfig()
+                        val upcomingBanner = snapshot.child("upcoming_banner").getValue(AdConfig::class.java) ?: AdConfig()
+                        val completedBanner = snapshot.child("completed_banner").getValue(AdConfig::class.java) ?: AdConfig()
+                        val upcomingLiveBanner = snapshot.child("upcoming_live_banner").getValue(AdConfig::class.java) ?: AdConfig()
+
+                        // Exit Dialog and Onboarding Ads
+                        val exitBanner = snapshot.child("exit_banner").getValue(AdConfig::class.java) ?: AdConfig()
+                        val nativeOb1 = snapshot.child("native_ob_1").getValue(AdConfig::class.java) ?: AdConfig()
+                        val nativeOb3 = snapshot.child("native_ob_3").getValue(AdConfig::class.java) ?: AdConfig()
+
+                        // Rewarded Ads
+                        val rewardAi = snapshot.child("reward_ai").getValue(AdConfig::class.java) ?: AdConfig()
+                        val rewardLive = snapshot.child("reward_live").getValue(AdConfig::class.java) ?: AdConfig()
+
                         _adsState.value = AdsState(
                             match_details_banner = matchDetails,
                             menu_banner = menu,
@@ -64,6 +88,15 @@ class AdsViewModel(application: Application) : AndroidViewModel(application) {
                             slider_big_native = sliderNative,
                             inter_home = homeInterstitial,
                             inter_details = matchDetailsInterstitial,
+                            live_banner = liveBanner,
+                            upcoming_banner = upcomingBanner,
+                            completed_banner = completedBanner,
+                            upcoming_live_banner = upcomingLiveBanner,
+                            exit_banner = exitBanner,
+                            native_ob_1 = nativeOb1,
+                            native_ob_3 = nativeOb3,
+                            reward_ai = rewardAi,
+                            reward_live = rewardLive,
                             isLoaded = true
                         )
                     } catch (e: Exception) {

@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.cricpeak.scorelive.ads.AdConfig
+import com.cricpeak.scorelive.ads.BannerAdView
 import com.cricpeak.scorelive.ui.theme.AccentGreen
 import com.cricpeak.scorelive.ui.theme.CardBackground
 import com.cricpeak.scorelive.ui.theme.TextGray
@@ -29,73 +31,77 @@ fun InternetConnectionDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
             dismissOnBackPress = false,
-            dismissOnClickOutside = false
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false
         )
     ) {
         Box(
             modifier = Modifier
-                .width(320.dp)
-                .background(
-                    color = CardBackground,
-                    shape = RoundedCornerShape(16.dp)
-                )
-                .border(
-                    width = 1.dp,
-                    color = AccentGreen.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(16.dp)
-                )
-                .padding(24.dp),
+                .fillMaxSize()
+                .background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
+            Box(
+                modifier = Modifier
+                    .width(320.dp)
+                    .background(
+                        color = CardBackground,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = AccentGreen.copy(alpha = 0.3f),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
             ) {
-                // Icon or Title
-                Text(
-                    text = "⚠️",
-                    fontSize = 48.sp,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                // Title
-                Text(
-                    text = "No Internet Connection",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-
-                // Message
-                Text(
-                    text = "Internet connection is required to use our app. Please check your connection and try again.",
-                    fontSize = 14.sp,
-                    color = TextGray,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 24.dp),
-                    lineHeight = 20.sp
-                )
-
-                // Retry Button
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentGreen,
-                        contentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(8.dp)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Retry",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold
+                        text = "⚠️",
+                        fontSize = 48.sp,
+                        modifier = Modifier.padding(bottom = 16.dp)
                     )
+
+                    Text(
+                        text = "No Internet Connection",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    Text(
+                        text = "Internet connection is required to use our app. Please check your connection and try again.",
+                        fontSize = 14.sp,
+                        color = TextGray,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 24.dp),
+                        lineHeight = 20.sp
+                    )
+
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentGreen,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "Retry",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         }
@@ -105,7 +111,8 @@ fun InternetConnectionDialog(
 @Composable
 fun ExitConfirmationDialog(
     onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    adConfig: AdConfig? = null
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -116,7 +123,133 @@ fun ExitConfirmationDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.8f)), // Semi-transparent full background
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(320.dp)
+                    .background(
+                        color = CardBackground,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = AccentGreen.copy(alpha = 0.3f),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        Text(
+                            text = "👋",
+                            fontSize = 48.sp,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+
+                        Text(
+                            text = "Exit App",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+
+                        Text(
+                            text = "Are you sure you want to exit?",
+                            fontSize = 14.sp,
+                            color = TextGray,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(bottom = 28.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Button(
+                                onClick = onDismiss,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = CardBackground,
+                                    contentColor = AccentGreen
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    width = 1.dp,
+                                    color = AccentGreen
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "Cancel",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
+                            Button(
+                                onClick = onConfirm,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AccentGreen,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "Exit",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
+                    if (adConfig?.enabled == true && adConfig.ads_unit.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        BannerAdView(
+                            adUnitId = adConfig.ads_unit,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RewardPolicyDialog(
+    onAccept: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
             Box(
@@ -135,19 +268,16 @@ fun ExitConfirmationDialog(
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Icon
                     Text(
-                        text = "👋",
+                        text = "🎯",
                         fontSize = 48.sp,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
 
-                    // Title
                     Text(
-                        text = "Exit App",
+                        text = "Unlock Premium Insights",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -155,61 +285,41 @@ fun ExitConfirmationDialog(
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
 
-                    // Message
                     Text(
-                        text = "Are you sure you want to exit?",
+                        text = "Watching a quick video ad unlocks AI Match Predictions and detailed Commentary Overs. This helps us keep the app free for everyone!",
                         fontSize = 14.sp,
                         color = TextGray,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(bottom = 28.dp)
+                        modifier = Modifier.padding(bottom = 24.dp),
+                        lineHeight = 20.sp
                     )
 
-                    // Buttons Row
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Cancel Button
                         Button(
                             onClick = onDismiss,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
+                            modifier = Modifier.weight(1f).height(48.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = CardBackground,
-                                contentColor = AccentGreen
-                            ),
-                            border = androidx.compose.foundation.BorderStroke(
-                                width = 1.dp,
-                                color = AccentGreen
+                                containerColor = Color.Transparent,
+                                contentColor = TextGray
                             ),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text(
-                                text = "Cancel",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Text("Not Now")
                         }
 
-                        // Confirm Button
                         Button(
-                            onClick = onConfirm,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
+                            onClick = onAccept,
+                            modifier = Modifier.weight(1f).height(48.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = AccentGreen,
                                 contentColor = Color.White
                             ),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text(
-                                text = "Exit",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Text("Accept", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
