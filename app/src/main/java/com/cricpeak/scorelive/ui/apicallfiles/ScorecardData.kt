@@ -19,7 +19,10 @@ data class BatsmanStats(
     val height: String? = null,
     val bio: String? = null,
     val isCaptain: Boolean = false,
-    val isWicketKeeper: Boolean = false
+    val isWicketKeeper: Boolean = false,
+    val isBatting: Boolean = false,
+    val isOnStrike: Boolean = false,
+    val fullName: String = ""
 )
 
 data class BowlerStats(
@@ -40,7 +43,8 @@ data class BowlerStats(
     val height: String? = null,
     val bio: String? = null,
     val isCaptain: Boolean = false,
-    val isWicketKeeper: Boolean = false
+    val isWicketKeeper: Boolean = false,
+    val fullName: String = ""
 )
 
 data class FallOfWicket(
@@ -54,35 +58,48 @@ data class InningsData(
     val teamShort: String,
     val batsmen: List<BatsmanStats>,
     val bowlers: List<BowlerStats>,
-    val extras: Int,
+    val totalExtras: Int,
     val total: Int,
     val wickets: Int,
+    val oversBowled: String = "0.0",
     val fallOfWickets: List<FallOfWicket>,
-    val inningNumber: Int = 0
+    val inningNumber: Int = 0,
+    val wides: Int = 0,
+    val noBalls: Int = 0,
+    val byes: Int = 0,
+    val legByes: Int = 0,
+    val recentOvers: List<OverDetails> = emptyList(),
+    val battingTeamId: Int = 0,
+    val currentRunRate: Double = 0.0,
+    val requiredRunRate: Double? = null,
+    val runsScored: Int = 0,
+    val partnership: PartnershipDetails? = null
 )
 
 // Sample Data for Demo
 fun getSampleInningsData(): Pair<InningsData, InningsData> {
     val innings1 = InningsData(
-        teamName = "India",
-        teamShort = "IND",
+        teamName = "TEAM 1",
+        teamShort = "T1",
         batsmen = emptyList(),
         bowlers = emptyList(),
-        extras = 0,
+        totalExtras = 0,
         total = 0,
         wickets = 0,
+        oversBowled = "0.0",
         fallOfWickets = emptyList(),
         inningNumber = 1
     )
 
     val innings2 = InningsData(
-        teamName = "Australia",
-        teamShort = "AUS",
+        teamName = "TEAM 2",
+        teamShort = "T2",
         batsmen = emptyList(),
         bowlers = emptyList(),
-        extras = 0,
+        totalExtras = 0,
         total = 0,
         wickets = 0,
+        oversBowled = "0.0",
         fallOfWickets = emptyList(),
         inningNumber = 2
     )
@@ -93,17 +110,17 @@ fun getSampleInningsData(): Pair<InningsData, InningsData> {
 /**
  * Extension to map API InningData to UI InningsData
  */
-fun InningData.toUIInningsData(teamName: String, teamShort: String, players: List<PlayerDetail>): InningsData {
+fun InningDetails.toUIInningsData(teamName: String, teamShort: String, players: List<PlayerDetail>): InningsData {
     val playerMap = players.associateBy { it.id }
     
     return InningsData(
         teamName = teamName,
         teamShort = teamShort,
-        batsmen = this.batsmen.map { 
+        batsmen = this.batsmen?.map { 
             val player = playerMap[it.playerId]
             BatsmanStats(
                 name = player?.displayName ?: it.fullName ?: "Player ${it.playerId}",
-                runs = it.runs,
+                runs = it.runsScored,
                 balls = it.balls,
                 fours = it.fours,
                 sixes = it.sixes,
@@ -119,10 +136,13 @@ fun InningData.toUIInningsData(teamName: String, teamShort: String, players: Lis
                 height = player?.height,
                 bio = player?.bio,
                 isCaptain = player?.isCaptain ?: false,
-                isWicketKeeper = player?.isWicketKeeper ?: false
+                isWicketKeeper = player?.isWicketKeeper ?: false,
+                isBatting = it.isBatting,
+                isOnStrike = it.isOnStrike,
+                fullName = it.fullName ?: player?.displayName ?: "Player"
             )
-        },
-        bowlers = this.bowlers.map {
+        } ?: emptyList(),
+        bowlers = this.bowlers?.map {
             val player = playerMap[it.playerId]
             BowlerStats(
                 name = player?.displayName ?: it.fullName ?: "Bowler ${it.playerId}",
@@ -142,20 +162,32 @@ fun InningData.toUIInningsData(teamName: String, teamShort: String, players: Lis
                 height = player?.height,
                 bio = player?.bio,
                 isCaptain = player?.isCaptain ?: false,
-                isWicketKeeper = player?.isWicketKeeper ?: false
+                isWicketKeeper = player?.isWicketKeeper ?: false,
+                fullName = it.fullName ?: player?.displayName ?: "Bowler"
             )
-        },
-        extras = this.totalExtras,
+        } ?: emptyList(),
+        totalExtras = this.totalExtras,
         total = this.runsScored,
         wickets = this.wickets,
-        fallOfWickets = this.fallOfWickets.map {
+        oversBowled = this.oversBowled,
+        fallOfWickets = this.fallOfWickets?.map {
             val player = playerMap[it.playerId]
             FallOfWicket(
                 playerName = player?.displayName ?: it.playerName ?: "Player ${it.playerId}",
                 runsAtFall = it.runsAtFall,
                 over = it.over
             )
-        },
-        inningNumber = this.inningNumber
+        } ?: emptyList(),
+        inningNumber = this.inningNumber,
+        wides = this.wides,
+        noBalls = this.noBalls,
+        byes = this.byes,
+        legByes = this.legByes,
+        recentOvers = this.overs ?: emptyList(),
+        battingTeamId = this.battingTeamId,
+        currentRunRate = this.currentRunRate,
+        requiredRunRate = this.requiredRunRate,
+        runsScored = this.runsScored,
+        partnership = this.partnership
     )
 }

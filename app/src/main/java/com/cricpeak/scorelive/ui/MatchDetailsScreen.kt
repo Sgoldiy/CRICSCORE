@@ -79,6 +79,7 @@ import com.cricpeak.scorelive.ads.RewardPrefs
 import com.cricpeak.scorelive.ui.apicallfiles.CommentaryEntry
 import com.cricpeak.scorelive.ui.apicallfiles.CommentsData
 import com.cricpeak.scorelive.ui.apicallfiles.CommentsState
+import com.cricpeak.scorelive.ui.apicallfiles.InningsData
 import com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsData
 import com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsState
 import com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsViewModel
@@ -87,8 +88,10 @@ import com.cricpeak.scorelive.ui.apicallfiles.OverSummary
 import com.cricpeak.scorelive.ui.apicallfiles.ScoreAnimation
 import com.cricpeak.scorelive.ui.apicallfiles.getBattingTeam
 import com.cricpeak.scorelive.ui.apicallfiles.getFirstInning
+import com.cricpeak.scorelive.ui.apicallfiles.getFourthInning
 import com.cricpeak.scorelive.ui.apicallfiles.getSampleInningsData
 import com.cricpeak.scorelive.ui.apicallfiles.getSecondInning
+import com.cricpeak.scorelive.ui.apicallfiles.getThirdInning
 import com.cricpeak.scorelive.ui.apicallfiles.toUIInningsData
 import com.cricpeak.scorelive.ui.components.RewardPolicyDialog
 import com.cricpeak.scorelive.ui.theme.CardBackground
@@ -134,9 +137,13 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
     var showRewardPolicyDialog by remember { mutableStateOf(false) }
     var rewardPendingOver by remember { mutableStateOf<Int?>(null) }
 
+    // Screen Policy Dialog State
+    var showMatchDetailsPolicyDialog by remember { mutableStateOf(false) }
+
     // Free Overs Tracking Logic
-    var unlockedUntilOver by remember { mutableIntStateOf(0) }
-    var lastAuthorizedOver by remember { mutableIntStateOf(0) }
+    var unlockedUntilOver by remember {
+        mutableIntStateOf(RewardPrefs.getOversUnlockedUntil(context, matchId))
+    }
 
     // Global Ad pre-loading for Match Details
     LaunchedEffect(adsState) {
@@ -166,7 +173,6 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                 }
             }
         }
-
         previousTabIndex = selectedTabIndex
     }
 
@@ -174,6 +180,8 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
     val matchInfoState = remember { mutableStateOf<MatchInfo?>(null) }
     var innings1 by remember { mutableStateOf(getSampleInningsData().first) }
     var innings2 by remember { mutableStateOf(getSampleInningsData().second) }
+    var innings3 by remember { mutableStateOf<InningsData?>(null) }
+    var innings4 by remember { mutableStateOf<InningsData?>(null) }
 
     // Squad states
     var homeTeamPlayers by remember { mutableStateOf<List<Player>>(emptyList()) }
@@ -215,23 +223,25 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                 // Map first innings data
                 val firstInning = matchData.getFirstInning()
                 if (firstInning != null) {
-                    val battingTeam = matchData.getBattingTeam(firstInning)
-                    innings1 = firstInning.toUIInningsData(
-                        battingTeam?.name ?: "Team 1",
-                        battingTeam?.shortName ?: "T1",
-                        matchData.players
-                    )
+                    innings1 = firstInning
                 }
 
                 // Map second innings data
                 val secondInning = matchData.getSecondInning()
                 if (secondInning != null) {
-                    val battingTeam = matchData.getBattingTeam(secondInning)
-                    innings2 = secondInning.toUIInningsData(
-                        battingTeam?.name ?: "Team 2",
-                        battingTeam?.shortName ?: "T2",
-                        matchData.players
-                    )
+                    innings2 = secondInning
+                }
+
+                // Map third innings data (for Test Matches)
+                val thirdInning = matchData.getThirdInning()
+                if (thirdInning != null) {
+                    innings3 = thirdInning
+                }
+
+                // Map fourth innings data (for Test Matches)
+                val fourthInning = matchData.getFourthInning()
+                if (fourthInning != null) {
+                    innings4 = fourthInning
                 }
 
                 // Extract squads using the Players list from API
@@ -264,11 +274,19 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                     }
 
                 // Set initial "current" over as authorized if it's the first load
-                if (lastAuthorizedOver == 0) {
-                    val currentOver =
-                        matchData.innings.lastOrNull()?.oversBowled?.toDoubleOrNull()?.toInt() ?: 0
-                    lastAuthorizedOver = currentOver
-                    unlockedUntilOver = currentOver + 1 // +1 free over logic
+                if (matchData.isLive) {
+                    if (unlockedUntilOver == -1) {
+                        val currentOver =
+                            matchData.innings.lastOrNull()?.oversBowled?.toDoubleOrNull()?.toInt()
+                                ?: 0
+                        // "running over and next two overs free" -> current + 1 (running) + 2 (free) = +3
+                        unlockedUntilOver = currentOver + 3
+                        RewardPrefs.setOversUnlockedUntil(context, matchId, unlockedUntilOver)
+                    }
+
+                    if (!RewardPrefs.isMatchDetailsPolicyAccepted(context)) {
+                        showMatchDetailsPolicyDialog = true
+                    }
                 }
             }
 
@@ -435,9 +453,11 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                         // 1. Match Details Banner Ad
                         if (adsState.match_details_banner.enabled && adsState.match_details_banner.ads_unit.isNotEmpty()) {
                             item {
-                                Box(modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp)
+                                ) {
                                     BannerAdView(adUnitId = adsState.match_details_banner.ads_unit)
                                 }
                             }
@@ -548,12 +568,18 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                         }
 
                                         1 -> { // Scorecard
+                                            val fullInningsList = mutableListOf(innings1, innings2)
+                                            // Always add extra innings if they are available, regardless of gameType check
+                                            innings3?.let { fullInningsList.add(it) }
+                                            innings4?.let { fullInningsList.add(it) }
+
                                             ScorecardScreen(
-                                                inningsList = listOf(innings1, innings2),
+                                                inningsList = fullInningsList,
                                                 onPlayerClick = { player ->
                                                     selectedPlayerProfile = player
                                                 },
-                                                adsState = adsState
+                                                adsState = adsState,
+                                                gameType = matchData.gameType
                                             )
                                         }
 
@@ -610,7 +636,9 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                     } else "T$i"
 
                                                                 val displayLabel =
-                                                                    if (matchData.gameType == "TEST") {
+                                                                    if (matchData.gameType.uppercase()
+                                                                            .contains("TEST") || commentsData.totalInnings > 2
+                                                                    ) {
                                                                         "$teamShortName (${(i + 1) / 2})"
                                                                     } else {
                                                                         teamShortName
@@ -619,8 +647,8 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                 val currentMatchId = matchId
                                                                 Card(
                                                                     modifier = Modifier
-                                                                        .padding(horizontal = 4.dp)
-                                                                        .width(130.dp)
+                                                                        .padding(horizontal = 2.dp)
+                                                                        .weight(1f)
                                                                         .clickable {
                                                                             viewModel.loadComments(
                                                                                 currentMatchId,
@@ -632,11 +660,7 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                             0xFF00BFA5
                                                                         ) else CardBackground
                                                                     ),
-                                                                    shape = RoundedCornerShape(12.dp),
-                                                                    border = if (!isSelected) BorderStroke(
-                                                                        1.dp,
-                                                                        Color.White.copy(0.1f)
-                                                                    ) else null
+                                                                    shape = RoundedCornerShape(12.dp)
                                                                 ) {
                                                                     Column(
                                                                         modifier = Modifier
@@ -680,7 +704,18 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                 is CommentaryEntry.OverScorecard -> {
                                                                     // REWARDED ADS LOGIC FOR OVERS
                                                                     val isLocked =
-                                                                        entry.overNumber > unlockedUntilOver
+                                                                        matchData.isLive && entry.overNumber > unlockedUntilOver
+
+                                                                    // 3. Overs Banner Ad - Before every 2 overs
+                                                                    if (entry.overNumber % 2 == 0 && adsState.overs_banner.enabled && adsState.overs_banner.ads_unit.isNotEmpty()) {
+                                                                        Box(
+                                                                            modifier = Modifier
+                                                                                .fillMaxWidth()
+                                                                                .padding(vertical = 16.dp)
+                                                                        ) {
+                                                                            BannerAdView(adUnitId = adsState.overs_banner.ads_unit)
+                                                                        }
+                                                                    }
 
                                                                     if (isLocked) {
                                                                         LockedOverItem(
@@ -704,30 +739,29 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                                                 adUnitId = rewardConfig.ads_unit,
                                                                                                 onRewardEarned = {
                                                                                                     unlockedUntilOver =
-                                                                                                        entry.overNumber + 1 // Unlock next 2 overs (+ current + 1 more)
+                                                                                                        entry.overNumber + 2 // Unlock current and next 2 overs
+                                                                                                    RewardPrefs.setOversUnlockedUntil(
+                                                                                                        context,
+                                                                                                        matchId,
+                                                                                                        unlockedUntilOver
+                                                                                                    )
                                                                                                 }
                                                                                             )
                                                                                         }
                                                                                     }
                                                                                 } else {
                                                                                     unlockedUntilOver =
-                                                                                        entry.overNumber + 1
+                                                                                        entry.overNumber + 2
+                                                                                    RewardPrefs.setOversUnlockedUntil(
+                                                                                        context,
+                                                                                        matchId,
+                                                                                        unlockedUntilOver
+                                                                                    )
                                                                                 }
                                                                             }
                                                                         )
                                                                     } else {
                                                                         OverScorecardItem(entry)
-                                                                    }
-
-                                                                    // 3. Overs Banner Ad - After every 2 overs
-                                                                    if (entry.overNumber % 2 == 0 && adsState.overs_banner.enabled && adsState.overs_banner.ads_unit.isNotEmpty()) {
-                                                                        Box(
-                                                                            modifier = Modifier
-                                                                                .fillMaxWidth()
-                                                                                .padding(vertical = 16.dp)
-                                                                        ) {
-                                                                            BannerAdView(adUnitId = adsState.overs_banner.ads_unit)
-                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -744,44 +778,63 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                 }
             }
         }
+    }
 
-        // Show Player Profile as an overlay
-        selectedPlayerProfile?.let { player ->
-            Box(modifier = Modifier.fillMaxSize()) {
-                PlayerProfileScreen(
-                    player = player,
-                    onBack = { selectedPlayerProfile = null }
-                )
-            }
-        }
-
-        // Reward Policy Dialog
-        if (showRewardPolicyDialog) {
-            RewardPolicyDialog(
-                onAccept = {
-                    RewardPrefs.setPolicyAccepted(context, true)
-                    showRewardPolicyDialog = false
-                    val rewardConfig =
-                        if (rewardPendingOver != null) adsState.reward_live else adsState.reward_ai
-                    if (activity != null && rewardConfig.enabled && rewardConfig.ads_unit.isNotEmpty()) {
-                        AdRewardManager.showAd(
-                            activity = activity,
-                            adUnitId = rewardConfig.ads_unit,
-                            onRewardEarned = {
-                                if (rewardPendingOver != null) {
-                                    unlockedUntilOver = rewardPendingOver!! + 1
-                                    rewardPendingOver = null
-                                }
-                            }
-                        )
-                    }
-                },
-                onDismiss = {
-                    showRewardPolicyDialog = false
-                    rewardPendingOver = null
-                }
+    // Show Player Profile as an overlay
+    selectedPlayerProfile?.let { player ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            PlayerProfileScreen(
+                player = player,
+                onBack = { selectedPlayerProfile = null }
             )
         }
+    }
+
+    // General Reward Policy Dialog (for Ads)
+    if (showRewardPolicyDialog) {
+        RewardPolicyDialog(
+            onAccept = {
+                RewardPrefs.setPolicyAccepted(context, true)
+                showRewardPolicyDialog = false
+                val rewardConfig =
+                    if (rewardPendingOver != null) adsState.reward_live else adsState.reward_ai
+                if (activity != null && rewardConfig.enabled && rewardConfig.ads_unit.isNotEmpty()) {
+                    AdRewardManager.showAd(
+                        activity = activity,
+                        adUnitId = rewardConfig.ads_unit,
+                        onRewardEarned = {
+                            if (rewardPendingOver != null) {
+                                unlockedUntilOver = rewardPendingOver!! + 2
+                                RewardPrefs.setOversUnlockedUntil(
+                                    context,
+                                    matchId,
+                                    unlockedUntilOver
+                                )
+                                rewardPendingOver = null
+                            }
+                        }
+                    )
+                }
+            },
+            onDismiss = {
+                showRewardPolicyDialog = false
+                rewardPendingOver = null
+            }
+        )
+    }
+
+    // Match Details Specific Policy Dialog
+    if (showMatchDetailsPolicyDialog) {
+        RewardPolicyDialog(
+            onAccept = {
+                RewardPrefs.setMatchDetailsPolicyAccepted(context, true)
+                showMatchDetailsPolicyDialog = false
+            },
+            onDismiss = {
+                showMatchDetailsPolicyDialog = false
+                onBackClick() // User did not accept, go back
+            }
+        )
     }
 }
 
@@ -836,8 +889,8 @@ fun LockedOverItem(overNumber: Int, onUnlockClick: () -> Unit) {
 
 @Composable
 fun DetailScoreCard(matchData: MatchDetailsData, scoreAnimation: ScoreAnimation) {
-    val homeInning = matchData.innings.find { it.battingTeamId == matchData.homeTeam.id }
-    val awayInning = matchData.innings.find { it.battingTeamId == matchData.awayTeam.id }
+    val homeInning = matchData.innings.findLast { it.battingTeamId == matchData.homeTeam.id }
+    val awayInning = matchData.innings.findLast { it.battingTeamId == matchData.awayTeam.id }
 
     Column(
         modifier = Modifier
@@ -879,14 +932,14 @@ fun DetailScoreCard(matchData: MatchDetailsData, scoreAnimation: ScoreAnimation)
 
                     ScoreRowDetail(
                         matchData.homeTeam.name,
-                        if (homeInning != null) "${homeInning.runsScored}/${homeInning.wickets}" else "0/0",
+                        if (homeInning != null) "${homeInning.total}/${homeInning.wickets}" else "0/0",
                         if (homeInning != null) "(${homeInning.oversBowled})" else "(0)",
                         matchData.homeTeam.logoUrl
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     ScoreRowDetail(
                         matchData.awayTeam.name,
-                        if (awayInning != null) "${awayInning.runsScored}/${awayInning.wickets}" else "0/0",
+                        if (awayInning != null) "${awayInning.total}/${awayInning.wickets}" else "0/0",
                         if (awayInning != null) "(${awayInning.oversBowled})" else "(0)",
                         matchData.awayTeam.logoUrl
                     )
@@ -936,9 +989,9 @@ fun DetailScoreCard(matchData: MatchDetailsData, scoreAnimation: ScoreAnimation)
                 val statusText: String = if (matchData.isLive) {
                     val inning1 = matchData.innings.getOrNull(0)
                     val inning2 = matchData.innings.getOrNull(1)
-                    if (inning2 != null && matchData.gameType != "TEST") {
-                        val target = inning1?.runsScored?.plus(1) ?: 0
-                        val needs = target - inning2.runsScored
+                    if (inning2 != null && !matchData.gameType.uppercase().contains("TEST")) {
+                        val target = inning1?.total?.plus(1) ?: 0
+                        val needs = target - inning2.total
                         val totalBalls = if (matchData.gameType == "ODI") 300 else 120
                         val usedBalls = inning2.oversBowled.toDoubleOrNull()
                             ?.let { (it.toInt() * 6) + ((it % 1) * 10).toInt() } ?: 0
@@ -950,7 +1003,7 @@ fun DetailScoreCard(matchData: MatchDetailsData, scoreAnimation: ScoreAnimation)
                             matchData.resultText ?: "Match in progress"
                         }
                     } else if (inning1 != null && inning2 != null) {
-                        val diff = inning1.runsScored - inning2.runsScored
+                        val diff = inning1.total - inning2.total
                         if (diff > 0) "Lead by $diff runs" else "Trail by ${-diff} runs"
                     } else {
                         matchData.resultText ?: "Live"
@@ -1657,63 +1710,74 @@ fun OverScorecardItem(entry: CommentaryEntry.OverScorecard) {
                     text = "End of Over ${entry.overNumber}",
                     color = Color(0xFF00BFA5),
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
+                    fontSize = 14.sp,
+                    fontFamily = GilroyFontFamily
                 )
                 Text(
                     text = "Score: ${entry.totalScore}",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
+                    fontSize = 14.sp,
+                    fontFamily = GilroyFontFamily
                 )
             }
 
             HorizontalDivider(
-                modifier = Modifier.padding(vertical = 8.dp),
+                modifier = Modifier.padding(vertical = 12.dp),
                 color = Color.White.copy(0.1f)
             )
 
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.weight(1f)) {
-                    entry.batsman1?.let { b ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(b.name, color = Color.White, fontSize = 12.sp)
-                            Text("${b.runs}(${b.balls})", color = Color.White, fontSize = 12.sp)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    entry.batsman2?.let { b ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(b.name, color = Color.White, fontSize = 12.sp)
-                            Text("${b.runs}(${b.balls})", color = Color.White, fontSize = 12.sp)
-                        }
-                    }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Runs in Over",
+                        color = TextGray,
+                        fontSize = 12.sp,
+                        fontFamily = GilroyFontFamily
+                    )
+                    Text(
+                        text = "${entry.runsInOver}",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = GilroyFontFamily
+                    )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .width(1.dp)
-                        .height(32.dp)
-                        .background(Color.White.copy(0.1f))
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "Wickets",
+                        color = TextGray,
+                        fontSize = 12.sp,
+                        fontFamily = GilroyFontFamily
+                    )
+                    Text(
+                        text = "${entry.wicketsInOver}",
+                        color = if (entry.wicketsInOver > 0) Color(0xFFE74C3C) else Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = GilroyFontFamily
+                    )
+                }
 
-                Column(modifier = Modifier.weight(0.8f)) {
-                    entry.bowler?.let { bw ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(bw.name, color = Color.White, fontSize = 12.sp)
-                            Text("${bw.wickets}-${bw.runs}", color = Color.White, fontSize = 12.sp)
-                        }
-                        Text("${bw.overs} Overs", color = TextGray, fontSize = 10.sp)
-                    }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "Run Rate",
+                        color = TextGray,
+                        fontSize = 12.sp,
+                        fontFamily = GilroyFontFamily
+                    )
+                    Text(
+                        text = String.format("%.1f", entry.runRate),
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = GilroyFontFamily
+                    )
                 }
             }
         }
@@ -1752,37 +1816,3 @@ fun String.formatIdentifier(): String {
     return this.replace(Regex("([a-z])([A-Z]+)"), "$1 $2")
 }
 
-// UI Data Models for Scorecard
-data class UIInningsData(
-    val teamName: String,
-    val teamShort: String,
-    val runs: Int,
-    val wickets: Int,
-    val overs: String,
-    val extras: Int,
-    val batsmen: List<UIBatsmanData>,
-    val bowlers: List<UIBowlerData>,
-)
-
-data class UIBatsmanData(
-    val id: Int,
-    val name: String,
-    val runs: Int,
-    val balls: Int,
-    val fours: Int,
-    val sixes: Int,
-    val strikeRate: String,
-    val dismissal: String,
-    val isOut: Boolean,
-    val isOnStrike: Boolean,
-)
-
-data class UIBowlerData(
-    val id: Int,
-    val name: String,
-    val overs: String,
-    val maidens: Int,
-    val runs: Int,
-    val wickets: Int,
-    val economy: String,
-)

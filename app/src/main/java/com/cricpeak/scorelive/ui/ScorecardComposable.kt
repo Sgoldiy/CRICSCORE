@@ -58,7 +58,7 @@ import com.cricpeak.scorelive.ui.theme.TextGray
 import java.util.Locale
 
 @Composable
-fun ScorecardScreen(inningsList: List<InningsData>, onPlayerClick: (PlayerProfileData) -> Unit = {}, adsState: AdsState? = null) {
+fun ScorecardScreen(inningsList: List<InningsData>, onPlayerClick: (PlayerProfileData) -> Unit = {}, adsState: AdsState? = null, gameType: String = "") {
     if (inningsList.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
             Text(
@@ -96,7 +96,7 @@ fun ScorecardScreen(inningsList: List<InningsData>, onPlayerClick: (PlayerProfil
             }
     ) {
         // Innings Tabs
-        InningsTabs(inningsList, selectedInningsTab) { selectedInningsTab = it }
+        InningsTabs(inningsList, selectedInningsTab, gameType) { selectedInningsTab = it }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -120,7 +120,7 @@ fun ScorecardScreen(inningsList: List<InningsData>, onPlayerClick: (PlayerProfil
 }
 
 @Composable
-fun InningsTabs(inningsList: List<InningsData>, selectedIndex: Int, onTabSelected: (Int) -> Unit) {
+fun InningsTabs(inningsList: List<InningsData>, selectedIndex: Int, gameType: String = "", onTabSelected: (Int) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
@@ -130,22 +130,26 @@ fun InningsTabs(inningsList: List<InningsData>, selectedIndex: Int, onTabSelecte
             val isSelected = selectedIndex == index
             Card(
                 modifier = Modifier
-                    .padding(horizontal = 4.dp)
-                    .width(130.dp)
+                    .padding(horizontal = 2.dp)
+                    .weight(1f)
                     .clickable { onTabSelected(index) },
                 colors = CardDefaults.cardColors(
                     containerColor = if (isSelected) Color(0xFF00BFA5) else CardBackground
                 ),
-                shape = RoundedCornerShape(12.dp),
-                border = if (!isSelected) BorderStroke(1.dp, Color.White.copy(0.1f)) else null
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
+                    val displayLabel = if (gameType.uppercase().contains("TEST") || inningsList.size > 2) {
+                        "${innings.teamShort} (${(index / 2) + 1})"
+                    } else {
+                        innings.teamShort
+                    }
                     Text(
-                        text = innings.teamShort,
+                        text = displayLabel,
                         color = if (isSelected) Color.Black else Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
@@ -232,7 +236,16 @@ fun BattingSection(innings: InningsData, onPlayerClick: (PlayerProfileData) -> U
             ) {
                 Column {
                     Text("EXTRAS", color = TextGray, fontSize = 11.sp, fontFamily = GilroyFontFamily, fontWeight = FontWeight.Bold)
-                    Text("${innings.extras}", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = GilroyFontFamily)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${innings.totalExtras}", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = GilroyFontFamily)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "(wd ${innings.wides}, nb ${innings.noBalls}, b ${innings.byes}, lb ${innings.legByes})",
+                            color = TextGray,
+                            fontSize = 11.sp,
+                            fontFamily = GilroyFontFamily
+                        )
+                    }
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text("TOTAL", color = TextGray, fontSize = 11.sp, fontFamily = GilroyFontFamily, fontWeight = FontWeight.Bold)

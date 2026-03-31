@@ -130,6 +130,17 @@ fun CricScoreHomeScreen(
         radius = 1000f
     )
 
+    // Helper to handle prediction clicks with ads
+    val handlePredictionWithAds: (Int) -> Unit = { matchId ->
+        val config = adsState?.reward_ai
+        if (config != null && config.enabled && activity != null) {
+            pendingPredictionMatchId = matchId
+            showRewardPolicyDialog = true
+        } else {
+            onPredictionClick(matchId)
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = DarkBackground
@@ -156,8 +167,9 @@ fun CricScoreHomeScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
+                    val message = state.message
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "Error: ${state.message}", color = Color.Red)
+                        Text(text = "Error: $message", color = Color.Red)
                         Button(
                             onClick = { viewModel.fetchFixtures() },
                             colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
@@ -220,7 +232,7 @@ fun CricScoreHomeScreen(
                                                     else if (page == 3 && topFiveMatches.size > 3) FeaturedMatchCard(
                                                         fixture = topFiveMatches[3],
                                                         onMatchClick = onMatchClick,
-                                                        onPredictionClick = onPredictionClick,
+                                                        onPredictionClick = handlePredictionWithAds,
                                                         showPrediction = false
                                                     )
                                                 }
@@ -230,7 +242,7 @@ fun CricScoreHomeScreen(
                                                     if (idx < topFiveMatches.size) FeaturedMatchCard(
                                                         fixture = topFiveMatches[idx],
                                                         onMatchClick = onMatchClick,
-                                                        onPredictionClick = onPredictionClick,
+                                                        onPredictionClick = handlePredictionWithAds,
                                                         showPrediction = false
                                                     )
                                                 }
@@ -293,21 +305,7 @@ fun CricScoreHomeScreen(
                                             is MatchListItemType.Match -> MatchListItem(
                                                 fixture = item.fixture,
                                                 onMatchClick = onMatchClick,
-                                                onPredictionClick = { id ->
-                                                    handlePredictionClick(
-                                                        matchId = id,
-                                                        context = context,
-                                                        activity = activity,
-                                                        adsState = adsState,
-                                                        onShowPolicy = { showRewardPolicyDialog = true },
-                                                        onSetPending = { pendingPredictionMatchId = it },
-                                                        onNavigate = { onPredictionClick(it) },
-                                                        onUnlocked = {
-                                                            scope.launch {
-                                                                snackbarHostState.showSnackbar("AI Predictions Unlocked 🎯")
-                                                            }
-                                                        })
-                                                })
+                                                onPredictionClick = handlePredictionWithAds)
 
                                             is MatchListItemType.Ad -> NativeAdViewHorizontal(
                                                 adUnitId = item.adConfig.ads_unit,
@@ -342,21 +340,7 @@ fun CricScoreHomeScreen(
                                         is MatchListItemType.Match -> MatchListItem(
                                             fixture = item.fixture,
                                             onMatchClick = onMatchClick,
-                                            onPredictionClick = { id ->
-                                                handlePredictionClick(
-                                                    matchId = id,
-                                                    context = context,
-                                                    activity = activity,
-                                                    adsState = adsState,
-                                                    onShowPolicy = { showRewardPolicyDialog = true },
-                                                    onSetPending = { pendingPredictionMatchId = it },
-                                                    onNavigate = { onPredictionClick(it) },
-                                                    onUnlocked = {
-                                                        scope.launch {
-                                                            snackbarHostState.showSnackbar("AI Predictions Unlocked 🎯")
-                                                        }
-                                                    })
-                                            })
+                                            onPredictionClick = handlePredictionWithAds)
 
                                         is MatchListItemType.Ad -> NativeAdViewHorizontal(
                                             adUnitId = item.adConfig.ads_unit,
@@ -375,21 +359,7 @@ fun CricScoreHomeScreen(
                                         is MatchListItemType.Match -> MatchListItem(
                                             fixture = item.fixture,
                                             onMatchClick = onMatchClick,
-                                            onPredictionClick = { id ->
-                                                handlePredictionClick(
-                                                    matchId = id,
-                                                    context = context,
-                                                    activity = activity,
-                                                    adsState = adsState,
-                                                    onShowPolicy = { showRewardPolicyDialog = true },
-                                                    onSetPending = { pendingPredictionMatchId = it },
-                                                    onNavigate = { onPredictionClick(it) },
-                                                    onUnlocked = {
-                                                        scope.launch {
-                                                            snackbarHostState.showSnackbar("AI Predictions Unlocked 🎯")
-                                                        }
-                                                    })
-                                            },
+                                            onPredictionClick = handlePredictionWithAds,
                                             showPrediction = false
                                         )
 
@@ -431,7 +401,6 @@ fun CricScoreHomeScreen(
                                     activity = activity,
                                     adUnitId = config.ads_unit,
                                     onRewardEarned = {
-                                        RewardPrefs.addAiUnlocks(context)
                                         onPredictionClick(id)
                                         scope.launch { snackbarHostState.showSnackbar("AI Predictions Unlocked 🎯") }
                                     })
@@ -443,41 +412,6 @@ fun CricScoreHomeScreen(
             }
         }
     }
-}
-
-private fun handlePredictionClick(
-    matchId: Int,
-    context: android.content.Context,
-    activity: Activity?,
-    adsState: AdsState?,
-    onShowPolicy: () -> Unit,
-    onSetPending: (Int) -> Unit,
-    onNavigate: (Int) -> Unit,
-    onUnlocked: () -> Unit,
-) {
-    if (RewardPrefs.getAiUnlockCount(context) > 0) {
-        RewardPrefs.useAiUnlock(context)
-        onNavigate(matchId)
-        return
-    }
-
-    if (!RewardPrefs.isPolicyAccepted(context)) {
-        onSetPending(matchId)
-        onShowPolicy()
-        return
-    }
-
-    adsState?.reward_ai?.let { config ->
-        if (config.enabled && activity != null) {
-            AdRewardManager.showAd(activity, config.ads_unit, {
-                RewardPrefs.addAiUnlocks(context)
-                onNavigate(matchId)
-                onUnlocked()
-            })
-        } else {
-            onNavigate(matchId)
-        }
-    } ?: onNavigate(matchId)
 }
 
 @Composable
@@ -582,8 +516,8 @@ fun FeaturedMatchCard(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val hIn = fixture.innings?.find { it.inningNumber == 1 }
-                    val aIn = fixture.innings?.find { it.inningNumber == 2 }
+                    val hIn = fixture.innings?.findLast { it.battingTeamId == fixture.homeTeam.id }
+                    val aIn = fixture.innings?.findLast { it.battingTeamId == fixture.awayTeam.id }
                     TeamInfoFeatured(
                         name = fixture.homeTeam.shortName,
                         score = if (isUpcoming) "-" else (hIn?.let { "${it.runsScored}/${it.wickets}" }
@@ -739,7 +673,7 @@ fun CategoryTabs(categories: List<String>, selectedIndex: Int, onTabSelected: (I
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.Absolute.SpaceEvenly,
+        horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
         categories.forEachIndexed { i, title ->
@@ -807,8 +741,8 @@ fun MatchListItem(
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
-                val hIn = fixture.innings?.find { it.inningNumber == 1 }
-                val aIn = fixture.innings?.find { it.inningNumber == 2 }
+                val hIn = fixture.innings?.findLast { it.battingTeamId == fixture.homeTeam.id }
+                val aIn = fixture.innings?.findLast { it.battingTeamId == fixture.awayTeam.id }
                 TeamRow(
                     name = fixture.homeTeam.shortName,
                     score = if (isUpcoming) "-" else (hIn?.let { "${it.runsScored}/${it.wickets}" }

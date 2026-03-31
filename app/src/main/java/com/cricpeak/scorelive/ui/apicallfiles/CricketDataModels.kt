@@ -47,7 +47,8 @@ data class Inning(
     @SerializedName("InningNumber") val inningNumber: Int,
     @SerializedName("RunsScored") val runsScored: Int,
     @SerializedName("OversBowled") val oversBowled: String,
-    @SerializedName("NumberOfWicketsFallen") val wickets: Int
+    @SerializedName("NumberOfWicketsFallen") val wickets: Int,
+    @SerializedName("BattingTeamId") val battingTeamId: Int = 0
 )
 
 // ==================== MATCH DETAILS & SCORECARD API MODELS ====================
@@ -218,7 +219,7 @@ data class CommentDetails(
 data class BatsmanDetails(
     @SerializedName("PlayerId") val playerId: Int = 0,
     @SerializedName("FullName") val fullName: String? = null,
-    @SerializedName("RunsScored") val runs: Int = 0,
+    @SerializedName("RunsScored") val runsScored: Int = 0,
     @SerializedName("BallsFaced") val balls: Int = 0,
     @SerializedName("FoursScored") val fours: Int = 0,
     @SerializedName("SixesScored") val sixes: Int = 0,
@@ -299,7 +300,7 @@ data class MatchDetailsData(
     val isUpcoming: Boolean,
     val tossResult: String,
     val resultText: String?,
-    val innings: List<InningData>,
+    val innings: List<InningsData>,
     val players: List<PlayerDetail>
 )
 
@@ -321,21 +322,7 @@ data class CompetitionData(
     val imageUrl: String
 )
 
-data class InningData(
-    val inningNumber: Int,
-    val battingTeamId: Int,
-    val runsScored: Int,
-    val wickets: Int,
-    val oversBowled: String,
-    val totalExtras: Int = 0,
-    val currentRunRate: Double = 0.0,
-    val requiredRunRate: Double? = null,
-    val batsmen: List<BatsmanDetails> = emptyList(),
-    val bowlers: List<BowlerDetails> = emptyList(),
-    val fallOfWickets: List<WicketDetails> = emptyList(),
-    val partnership: PartnershipDetails? = null,
-    val recentOvers: List<OverDetails> = emptyList()
-)
+
 
 /**
  * Extension to map MatchDetailsResponse to MatchDetailsData
@@ -378,20 +365,11 @@ fun MatchDetailsResponse.toMatchDetailsData(): MatchDetailsData {
         tossResult = f.tossResult ?: "Toss not yet done",
         resultText = f.resultText,
         innings = f.innings?.map { inning ->
-            InningData(
-                inningNumber = inning.inningNumber,
-                battingTeamId = inning.battingTeamId,
-                runsScored = inning.runsScored,
-                wickets = inning.wickets,
-                oversBowled = inning.oversBowled,
-                totalExtras = inning.totalExtras,
-                currentRunRate = inning.currentRunRate,
-                requiredRunRate = inning.requiredRunRate,
-                batsmen = inning.batsmen ?: emptyList(),
-                bowlers = inning.bowlers ?: emptyList(),
-                fallOfWickets = inning.fallOfWickets ?: emptyList(),
-                partnership = inning.partnership,
-                recentOvers = inning.overs ?: emptyList()
+            val team = if (inning.battingTeamId == f.homeTeam?.id) f.homeTeam else f.awayTeam
+            inning.toUIInningsData(
+                teamName = team?.name ?: "",
+                teamShort = team?.shortName ?: "",
+                players = players ?: emptyList()
             )
         } ?: emptyList(),
         players = players

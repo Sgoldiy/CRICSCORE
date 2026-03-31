@@ -63,12 +63,10 @@ fun MatchDetailsData.toMatchInfo(): MatchInfo {
 /**
  * Get first inning data safely
  */
-fun MatchDetailsData.getFirstInning(): InningData? = innings.getOrNull(0)
-
-/**
- * Get second inning data safely
- */
-fun MatchDetailsData.getSecondInning(): InningData? = innings.getOrNull(1)
+fun MatchDetailsData.getFirstInning(): InningsData? = innings.getOrNull(0)
+fun MatchDetailsData.getSecondInning(): InningsData? = innings.getOrNull(1)
+fun MatchDetailsData.getThirdInning(): InningsData? = innings.getOrNull(2)
+fun MatchDetailsData.getFourthInning(): InningsData? = innings.getOrNull(3)
 
 /**
  * Check if match has completed
@@ -95,7 +93,7 @@ fun MatchDetailsData.getWinnerTeam(): TeamData? {
 /**
  * Get batting team for a specific inning
  */
-fun MatchDetailsData.getBattingTeam(inning: InningData): TeamData? {
+fun MatchDetailsData.getBattingTeam(inning: InningsData): TeamData? {
     return when (inning.battingTeamId) {
         homeTeam.id -> homeTeam
         awayTeam.id -> awayTeam

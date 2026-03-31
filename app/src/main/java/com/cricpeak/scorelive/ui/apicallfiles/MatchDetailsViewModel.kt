@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.cricpeak.scorelive.ads.RewardPrefs
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlin.collections.find
 
 sealed class MatchDetailsState {
     object Loading : MatchDetailsState()
@@ -63,7 +64,8 @@ sealed class CommentaryEntry {
         val batsman2: BatsmanStats?,
         val bowler: BowlerStats?,
         val runsInOver: Int = 0,
-        val wicketsInOver: Int = 0
+        val wicketsInOver: Int = 0,
+        val runRate: Double = 0.0
     ) : CommentaryEntry()
 }
 
@@ -162,10 +164,13 @@ class MatchDetailsViewModel(
                 
                 if (isRefresh && currentMatchData != null) {
                     val prev = currentMatchData!!
-                    val newTotal = matchData.innings.lastOrNull()?.runsScored ?: 0
-                    val oldTotal = prev.innings.lastOrNull()?.runsScored ?: 0
-                    val newWickets = matchData.innings.lastOrNull()?.wickets ?: 0
-                    val oldWickets = prev.innings.lastOrNull()?.wickets ?: 0
+                    val newInning = matchData.innings.lastOrNull()
+                    val oldInning = prev.innings.lastOrNull()
+                    
+                    val newTotal = newInning?.total ?: 0
+                    val oldTotal = oldInning?.total ?: 0
+                    val newWickets = newInning?.wickets ?: 0
+                    val oldWickets = oldInning?.wickets ?: 0
                     
                     val runsDiff = newTotal - oldTotal
                     
@@ -239,13 +244,15 @@ class MatchDetailsViewModel(
         currentInning?.currentOver?.let { over -> allOversMap[over.overNumber] = over }
         val overs = allOversMap.values.toList()
         val playersMap = response.players?.associateBy { it.id } ?: emptyMap()
-        val totalInningsExpected = if (gameType?.uppercase()?.contains("TEST") == true) 4 else 2
+        val totalInningsAvailableInDetails = currentMatchData?.innings?.size ?: 0
+        val totalInningsInComments = innings.size
+        val totalInningsExpected = if (gameType?.uppercase()?.contains("TEST") == true || totalInningsAvailableInDetails > 2 || totalInningsInComments > 2) 4 else 2
         val sortedOvers = overs.sortedBy { it.overNumber }
         val batsmanSnapshots = mutableMapOf<Int, BatsmanStats>()
         val bowlerSnapshots = mutableMapOf<Int, BowlerStats>()
         val currentPair = mutableSetOf<Int>()
         
-        data class OverState(val totalRuns: Int, val totalWickets: Int, val b1: BatsmanStats?, val b2: BatsmanStats?, val bowler: BowlerStats?, val runsInOver: Int, val wicketsInOver: Int)
+        data class OverState(val totalRuns: Int, val totalWickets: Int, val b1: BatsmanStats?, val b2: BatsmanStats?, val bowler: BowlerStats?, val runsInOver: Int, val wicketsInOver: Int, val runRate: Double)
         val overStatesMap = mutableMapOf<Int, OverState>()
 
         for (over in sortedOvers) {
@@ -278,7 +285,16 @@ class MatchDetailsViewModel(
                 }
             }
             val pair = currentPair.toList()
-            overStatesMap[over.overNumber] = OverState(totalRuns = over.totalInningRuns, totalWickets = over.totalInningWickets, b1 = pair.getOrNull(0)?.let { batsmanSnapshots[it] }, b2 = pair.getOrNull(1)?.let { batsmanSnapshots[it] }, bowler = bowlerSnapshots[lastBowlerId], runsInOver = over.runsConceded + over.runsExtras, wicketsInOver = over.wickets)
+            overStatesMap[over.overNumber] = OverState(
+                totalRuns = over.totalInningRuns,
+                totalWickets = over.totalInningWickets,
+                b1 = pair.getOrNull(0)?.let { batsmanSnapshots[it] },
+                b2 = pair.getOrNull(1)?.let { batsmanSnapshots[it] },
+                bowler = bowlerSnapshots[lastBowlerId],
+                runsInOver = over.runsConceded + over.runsExtras,
+                wicketsInOver = over.wickets,
+                runRate = over.runRate
+            )
         }
 
         val processedOvers = sortedOvers.map { over ->
@@ -296,7 +312,17 @@ class MatchDetailsViewModel(
                 }
             }
             overStatesMap[over.overNumber]?.let { state ->
-                commentary.add(CommentaryEntry.OverScorecard(overNumber = over.overNumber, totalScore = "${state.totalRuns}/${state.totalWickets}", totalOvers = "${over.overNumber}", batsman1 = state.b1, batsman2 = state.b2, bowler = state.bowler, runsInOver = state.runsInOver, wicketsInOver = state.wicketsInOver))
+                commentary.add(CommentaryEntry.OverScorecard(
+                    overNumber = over.overNumber,
+                    totalScore = "${state.totalRuns}/${state.totalWickets}",
+                    totalOvers = "${over.overNumber}",
+                    batsman1 = state.b1,
+                    batsman2 = state.b2,
+                    bowler = state.bowler,
+                    runsInOver = state.runsInOver,
+                    wicketsInOver = state.wicketsInOver,
+                    runRate = state.runRate
+                ))
             }
         }
         return CommentsData(processedOvers.takeLast(5), commentary.reversed(), totalInningsExpected, inningNumber)
