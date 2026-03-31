@@ -83,6 +83,7 @@ fun CricScoreHomeScreen(
     onMatchClick: (Int) -> Unit,
     onPredictionClick: (Int) -> Unit,
     onMenuClick: () -> Unit,
+    onPurchaseClick: () -> Unit = {},
     adsState: AdsState? = null,
 ) {
     val context = LocalContext.current
@@ -196,7 +197,7 @@ fun CricScoreHomeScreen(
                                 .statusBarsPadding(),
                             contentPadding = PaddingValues(bottom = if (adsState?.sticky_banner_bottom?.enabled == true) 80.dp else 24.dp)
                         ) {
-                            item { TopBar(onMenuClick = onMenuClick) }
+                            item { TopBar(onMenuClick = onMenuClick, onPurchaseClick = onPurchaseClick) }
 
                             // Featured Section
                             if (topFiveMatches.isNotEmpty()) {
@@ -415,7 +416,7 @@ fun CricScoreHomeScreen(
 }
 
 @Composable
-fun TopBar(onMenuClick: () -> Unit) {
+fun TopBar(onMenuClick: () -> Unit, onPurchaseClick: () -> Unit = {}) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -438,7 +439,14 @@ fun TopBar(onMenuClick: () -> Unit) {
             fontFamily = BayonFont,
             letterSpacing = (36 * 0.07).sp
         )
-        Spacer(modifier = Modifier.size(24.dp))
+        Icon(
+            painter = painterResource(id = R.drawable.ic_purchase),
+            contentDescription = "Purchase",
+            modifier = Modifier
+                .size(28.dp)
+                .clickable { onPurchaseClick() },
+            tint = Color.Unspecified
+        )
     }
 }
 

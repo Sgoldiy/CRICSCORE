@@ -32,6 +32,7 @@ import com.cricpeak.scorelive.ui.OnboardingScreen
 import com.cricpeak.scorelive.ui.PrivacyPolicyScreen
 import com.cricpeak.scorelive.ui.SplashScreen
 import com.cricpeak.scorelive.ui.UninstallFeedbackScreen
+import com.cricpeak.scorelive.ui.PurchaseScreen
 import com.cricpeak.scorelive.ui.theme.CRICPEAKTheme
 import com.cricpeak.scorelive.ui.components.ExitConfirmationDialog
 import com.cricpeak.scorelive.ui.components.InternetConnectionDialog
@@ -169,6 +170,9 @@ fun AppNavigation(activity: MainActivity? = null) {
                 onMenuClick = {
                     navController.navigate("menu")
                 },
+                onPurchaseClick = {
+                    navController.navigate("purchase")
+                },
                 adsState = adsState
             )
         }
@@ -184,6 +188,10 @@ fun AppNavigation(activity: MainActivity? = null) {
                 onUninstallClick = { navController.navigate("uninstall_feedback") },
                 adsState = adsState
             )
+        }
+
+        composable("purchase") {
+            PurchaseScreen(onClose = { navController.popBackStack() })
         }
 
         composable("uninstall_feedback") {
