@@ -467,14 +467,16 @@ fun TopBar(onMenuClick: () -> Unit, onPurchaseClick: () -> Unit = {}) {
             fontFamily = BayonFont,
             letterSpacing = (36 * 0.07).sp
         )
-        Icon(
+        // Hide purchase icon as of now
+        Spacer(modifier = Modifier.size(28.dp))
+        /*Icon(
             painter = painterResource(id = R.drawable.ic_purchase),
             contentDescription = "Purchase",
             modifier = Modifier
                 .size(28.dp)
                 .clickable { onPurchaseClick() },
             tint = Color.Unspecified
-        )
+        )*/
     }
 }
 
