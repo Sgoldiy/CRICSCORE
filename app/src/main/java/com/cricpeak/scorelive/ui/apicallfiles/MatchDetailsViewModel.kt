@@ -53,7 +53,24 @@ sealed class CommentaryEntry {
         val length: String? = null,
         val line: String? = null,
         val shotType: String? = null,
-        val fieldingPosition: String? = null
+        val fieldingPosition: String? = null,
+        val runs: Int = 0,
+        val isWicket: Boolean = false,
+        val shotAngle: Int? = null,
+        val shotMagnitude: Int? = null,
+        val dismissalType: String? = null,
+        val isAirControlled: Boolean = false,
+        val isAirNotControlled: Boolean = false,
+        val isWide: Boolean = false,
+        val isNoBall: Boolean = false,
+        val isByes: Boolean = false,
+        val isLegByes: Boolean = false,
+        val battingConnectionId: String? = null,
+        val battingFeetId: String? = null,
+        val catchDifficulty: Int? = null,
+        val noBallsCount: Int = 0,
+        val runsWide: Int = 0,
+        val batterId: Int = 0
     ) : CommentaryEntry()
 
     data class OverScorecard(
@@ -103,7 +120,7 @@ data class BallInfo(
             isWicket -> Color(0xFFE74C3C)
             isSix -> Color(0xFF8E44AD)
             runs == 4 || (isBoundary && !isSix) -> Color(0xFFF57C00)
-            isWide || isNoBall -> Color(0xFF00BFA5)
+            isWide || isNoBall -> Color(0xff04880d)
             isLegBye || isBye -> Color(0xFF16A085)
             else -> Color(0xFF2C3E50)
         }
@@ -155,7 +172,14 @@ class MatchDetailsViewModel(
             if (isRefresh) {
                 _isRefreshing.value = true
             } else {
-                _matchDetailsState.value = MatchDetailsState.Loading
+                // Zero-latency instant rendering: emit cached data before hitting network!
+                repository.getCachedScorecard(matchId)?.let { cachedResponse ->
+                    val matchData = cachedResponse.toMatchDetailsData()
+                    _matchDetailsState.value = MatchDetailsState.Success(matchData)
+                    currentMatchData = matchData
+                } ?: run {
+                    _matchDetailsState.value = MatchDetailsState.Loading
+                }
             }
             
             try {
@@ -186,16 +210,27 @@ class MatchDetailsViewModel(
                 
                 if (matchData.isUpcoming && !isRefresh) fetchMatchPrediction(matchData)
 
-                if (!isRefresh && matchData.isLive) {
-                    startAutoRefresh(matchId)
-                } else if (isRefresh && !matchData.isLive) {
+                // Robust Auto-Refresh Trigger: Refresh as long as match is Live or In-Progress
+                val isActuallyLive = matchData.isLive || matchData.isInProgress
+                if (isActuallyLive) {
+                    if (refreshJob == null || refreshJob?.isActive == false) {
+                        startAutoRefresh(matchId)
+                    }
+                } else if (isRefresh && matchData.isCompleted) {
+                    // Only stop refresh loop once the match is officially completed
                     refreshJob?.cancel()
                 }
 
+                // Robust Inning Selection for Commentary
                 val currentInningNum = (_commentsState.value as? CommentsState.Success)?.commentsData?.currentInning
-                val inningToLoad = currentInningNum ?: if (matchData.innings.isNotEmpty()) {
+                val inningToLoad = if (isRefresh && currentInningNum != null) {
+                    currentInningNum
+                } else if (matchData.innings.isNotEmpty()) {
+                    // Default to the latest live inning if it's the first load or we have no selection
                     matchData.innings.maxByOrNull { it.inningNumber }?.inningNumber ?: 1
-                } else 1
+                } else {
+                    1
+                }
                 
                 loadComments(matchId, inningToLoad, isRefresh)
             } catch (e: Exception) {
@@ -210,21 +245,135 @@ class MatchDetailsViewModel(
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
             while (isActive) {
-                delay(10000)
+                delay(5000)
                 loadMatchDetails(matchId, isRefresh = true)
             }
         }
     }
 
+    // Pagination State
+    private val _isPaginatingComments = MutableStateFlow(false)
+    val isPaginatingComments = _isPaginatingComments.asStateFlow()
+
+    private var lowestOverFetched: Int? = null
+    private var currentFixtureIdForComments: Int? = null
+    private var currentInningForComments: Int? = null
+    private var _lastRawCommentsResponse: CommentsResponse? = null
+    private val cachedOvers = LinkedHashMap<Int, OverDetails>()
+    
+    // UI Local Pagination variable to aggressively eliminate Compose lag
+    private var visibleOversLimit = 2
+
     fun loadComments(fixtureId: Int, inningNumber: Int, isRefresh: Boolean = false) {
         viewModelScope.launch {
-            if (!isRefresh) _commentsState.value = CommentsState.Loading
+            if (!isRefresh || currentInningForComments != inningNumber || currentFixtureIdForComments != fixtureId) {
+                _commentsState.value = CommentsState.Loading
+                visibleOversLimit = 2
+                cachedOvers.clear() // Clear cache when changing innings/fixtures
+                lowestOverFetched = null
+            }
+            
+            currentFixtureIdForComments = fixtureId
+            currentInningForComments = inningNumber
+            
             try {
-                val response = repository.getComments(fixtureId, inningNumber, 500)
-                val commentsData = mapCommentsResponse(response, currentMatchData?.gameType, inningNumber)
-                _commentsState.value = CommentsState.Success(commentsData)
+                repository.getComments(fixtureId, inningNumber, 500)
+                    .flowOn(Dispatchers.IO)
+                    .collect { response ->
+                        _lastRawCommentsResponse = response
+                        
+                        // Extract base overs to track pagination
+                        val targetInning = response.innings?.find { it.inningNumber == inningNumber }
+                        if (targetInning?.overs != null) {
+                            targetInning.overs.forEach { cachedOvers[it.overNumber] = it }
+                            if (!isRefresh) {
+                                lowestOverFetched = cachedOvers.keys.minOrNull()
+                            }
+                        }
+
+                        // We only want to map and emit if it's the absolute latest, or if we haven't paginated yet.
+                        // Or we can rebuild using ALL cached overs to ensure paginated data isn't wiped out on auto-refresh
+                        val mergedInning = targetInning?.copy(overs = cachedOvers.values.sortedBy { it.overNumber })
+                        val updatedInnings = response.innings?.map { 
+                            if (it.inningNumber == inningNumber) mergedInning!! else it 
+                        } ?: emptyList()
+                        val mergedResponse = response.copy(innings = updatedInnings)
+
+                        val commentsData = withContext(Dispatchers.Default) {
+                            mapCommentsResponse(mergedResponse, currentMatchData?.gameType, inningNumber)
+                        }
+                        _commentsState.value = CommentsState.Success(commentsData)
+                    }
             } catch (e: Exception) {
                 if (!isRefresh) _commentsState.value = CommentsState.Error(e.localizedMessage ?: "Error")
+            }
+        }
+    }
+
+    fun loadMoreComments() {
+        if (_isPaginatingComments.value) return
+        
+        // 1. Zero-latency Local Pagination: Increase limits from Memory Cache first
+        if (visibleOversLimit < cachedOvers.size) {
+            _isPaginatingComments.value = true
+            visibleOversLimit += 3
+            
+            viewModelScope.launch {
+                val lastResponse = _lastRawCommentsResponse
+                if (lastResponse != null) {
+                    val commentsData = withContext(Dispatchers.Default) {
+                        mapCommentsResponse(lastResponse, currentMatchData?.gameType, currentInningForComments ?: 1)
+                    }
+                    _commentsState.value = CommentsState.Success(commentsData)
+                }
+                _isPaginatingComments.value = false
+            }
+            return
+        }
+
+        // 2. If memory pool is drawn out, Fetch Network Pagination
+        val fixtureId = currentFixtureIdForComments ?: return
+        val inningNumber = currentInningForComments ?: return
+        val lowestOver = lowestOverFetched ?: return
+        
+        if (lowestOver <= 1) return
+        
+        _isPaginatingComments.value = true
+        
+        viewModelScope.launch {
+            try {
+                val nextResponse = withContext(Dispatchers.IO) {
+                    repository.getPaginatedComments(fixtureId, inningNumber, lowestOver)
+                }
+                
+                val nextInning = nextResponse.innings?.find { it.inningNumber == inningNumber }
+                val newOvers = nextInning?.overs ?: emptyList()
+                
+                if (newOvers.isNotEmpty()) {
+                    newOvers.forEach { cachedOvers[it.overNumber] = it }
+                    lowestOverFetched = cachedOvers.keys.minOrNull()
+                    
+                    val lastResponse = _lastRawCommentsResponse ?: return@launch
+                    val targetInning = lastResponse.innings?.find { it.inningNumber == inningNumber } ?: return@launch
+                    
+                    val mergedInning = targetInning.copy(overs = cachedOvers.values.sortedBy { it.overNumber })
+                    val updatedInnings = lastResponse.innings.map { 
+                        if (it.inningNumber == inningNumber) mergedInning else it 
+                    }
+                    val mergedResponse = lastResponse.copy(innings = updatedInnings)
+                    _lastRawCommentsResponse = mergedResponse
+                    
+                    val commentsData = withContext(Dispatchers.Default) {
+                        mapCommentsResponse(mergedResponse, currentMatchData?.gameType, inningNumber)
+                    }
+                    _commentsState.value = CommentsState.Success(commentsData)
+                } else {
+                    lowestOverFetched = null // No more pages left
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MatchDetailsVM", "Pagination fail: ${e.message}")
+            } finally {
+                _isPaginatingComments.value = false
             }
         }
     }
@@ -250,7 +399,6 @@ class MatchDetailsViewModel(
         val sortedOvers = overs.sortedBy { it.overNumber }
         val batsmanSnapshots = mutableMapOf<Int, BatsmanStats>()
         val bowlerSnapshots = mutableMapOf<Int, BowlerStats>()
-        val currentPair = mutableSetOf<Int>()
         
         data class OverState(val totalRuns: Int, val totalWickets: Int, val b1: BatsmanStats?, val b2: BatsmanStats?, val bowler: BowlerStats?, val runsInOver: Int, val wicketsInOver: Int, val runRate: Double)
         val overStatesMap = mutableMapOf<Int, OverState>()
@@ -258,11 +406,14 @@ class MatchDetailsViewModel(
         for (over in sortedOvers) {
             val apiBalls = over.balls?.sortedBy { it.ballNumber } ?: continue
             var lastBowlerId = 0
+            var currentBatterId = 0
+            var currentNonStrikerId = 0
             for (ball in apiBalls) {
-                lastBowlerId = ball.bowlerId
-                if (ball.isWicket) currentPair.remove(ball.batterId)
+                if (ball.bowlerId != 0) lastBowlerId = ball.bowlerId
+                if (ball.batterId != 0) currentBatterId = ball.batterId
+                if (ball.nonStrikeBattingPlayerId != 0) currentNonStrikerId = ball.nonStrikeBattingPlayerId
+                
                 if (ball.batterId != 0) {
-                    if (!currentPair.contains(ball.batterId) && currentPair.size < 2) currentPair.add(ball.batterId)
                     val stats = batsmanSnapshots[ball.batterId] ?: run {
                         val p = playersMap[ball.batterId]
                         BatsmanStats(name = p?.displayName ?: "Player", runs = 0, balls = 0, fours = 0, sixes = 0, strikeRate = 0.0, outStatus = "Not Out", imageUrl = p?.imageUrl ?: "", playerId = ball.batterId)
@@ -284,12 +435,23 @@ class MatchDetailsViewModel(
                     bowlerSnapshots[ball.bowlerId] = stats.copy(runs = stats.runs + ball.runsConceded, wickets = stats.wickets + if (ball.isWicket) 1 else 0, overs = "${totalBalls / 6}.${totalBalls % 6}")
                 }
             }
-            val pair = currentPair.toList()
+            
+            // Get stats for current batter and non-striker
+            val b1 = batsmanSnapshots[currentBatterId] ?: if (currentBatterId != 0) {
+                val p = playersMap[currentBatterId]
+                BatsmanStats(name = p?.displayName ?: "Player", runs = 0, balls = 0, fours = 0, sixes = 0, strikeRate = 0.0, outStatus = "Not Out", imageUrl = p?.imageUrl ?: "", playerId = currentBatterId)
+            } else null
+            
+            val b2 = batsmanSnapshots[currentNonStrikerId] ?: if (currentNonStrikerId != 0) {
+                val p = playersMap[currentNonStrikerId]
+                BatsmanStats(name = p?.displayName ?: "Player", runs = 0, balls = 0, fours = 0, sixes = 0, strikeRate = 0.0, outStatus = "Not Out", imageUrl = p?.imageUrl ?: "", playerId = currentNonStrikerId)
+            } else null
+
             overStatesMap[over.overNumber] = OverState(
                 totalRuns = over.totalInningRuns,
                 totalWickets = over.totalInningWickets,
-                b1 = pair.getOrNull(0)?.let { batsmanSnapshots[it] },
-                b2 = pair.getOrNull(1)?.let { batsmanSnapshots[it] },
+                b1 = b1,
+                b2 = b2,
                 bowler = bowlerSnapshots[lastBowlerId],
                 runsInOver = over.runsConceded + over.runsExtras,
                 wicketsInOver = over.wickets,
@@ -303,12 +465,40 @@ class MatchDetailsViewModel(
         }
 
         val commentary = mutableListOf<CommentaryEntry>()
-        for (over in sortedOvers) {
+        val oversForCommentary = sortedOvers.takeLast(visibleOversLimit)
+        for (over in oversForCommentary) {
             val apiBalls = over.balls?.sortedBy { it.ballNumber } ?: continue
             for (ball in apiBalls) {
                 val comments = ball.comments ?: continue
                 for (comment in comments.filter { it.commentTypeId != "EndOfOver" }) {
-                    commentary.add(CommentaryEntry.BallCommentary(ballResult = when { ball.isWicket -> "W"; ball.isWide -> "Wd"; ball.isNoBall -> "Nb"; ball.isLegByes -> "${ball.runs}lb"; ball.isByes -> "${ball.runs}b"; else -> ball.runsScored.toString() }, title = formatCommentaryTitle(comment, ball), over = "${over.overNumber - 1}.${ball.ballNumber}", description = comment.message, color = getBallColor(ball), length = ball.lengthTypeId, line = ball.lineTypeId, shotType = ball.battingShotTypeId, fieldingPosition = ball.fieldingPosition))
+                    commentary.add(CommentaryEntry.BallCommentary(
+                        ballResult = when { ball.isWicket -> "W"; ball.isWide -> "Wd"; ball.isNoBall -> "Nb"; ball.isLegByes -> "${ball.runs}lb"; ball.isByes -> "${ball.runs}b"; else -> ball.runsScored.toString() }, 
+                        title = formatCommentaryTitle(comment, ball), 
+                        over = "${over.overNumber - 1}.${ball.ballNumber}", 
+                        description = comment.message, 
+                        color = getBallColor(ball), 
+                        length = ball.lengthTypeId, 
+                        line = ball.lineTypeId, 
+                        shotType = ball.battingShotTypeId, 
+                        fieldingPosition = ball.fieldingPosition, 
+                        runs = ball.runsScored, 
+                        isWicket = ball.isWicket, 
+                        shotAngle = ball.shotAngle, 
+                        shotMagnitude = ball.shotMagnitude,
+                        dismissalType = ball.dismissalType,
+                        isAirControlled = ball.isAirControlled,
+                        isAirNotControlled = ball.isAirNotControlled,
+                        isWide = ball.isWide,
+                        isNoBall = ball.isNoBall,
+                        isByes = ball.isByes,
+                        isLegByes = ball.isLegByes,
+                        battingConnectionId = ball.battingConnectionId,
+                        battingFeetId = ball.battingFeetId,
+                        catchDifficulty = ball.catchDifficulty,
+                        noBallsCount = ball.noBallsCount,
+                        runsWide = ball.runsWide,
+                        batterId = ball.batterId
+                    ))
                 }
             }
             overStatesMap[over.overNumber]?.let { state ->

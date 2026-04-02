@@ -56,7 +56,7 @@ class CricketViewModel : ViewModel() {
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
             while (isActive) {
-                delay(10000) // 10 seconds refresh rule
+                delay(5000) // 5 seconds refresh rule
                 fetchFixtures()
             }
         }

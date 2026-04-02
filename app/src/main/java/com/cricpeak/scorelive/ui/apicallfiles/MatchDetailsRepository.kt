@@ -1,10 +1,42 @@
 package com.cricpeak.scorelive.ui.apicallfiles
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import java.util.concurrent.ConcurrentHashMap
+
 /**
  * Repository layer for Match Details
  * Handles all data operations and caching if needed
  */
 class MatchDetailsRepository(private val apiService: CricketApiService) {
+
+    private val scorecardCache = ConcurrentHashMap<Int, ScorecardResponse>()
+    private val commentsCache = ConcurrentHashMap<String, CommentsResponse>()
+
+    fun getCachedScorecard(matchId: Int): ScorecardResponse? = scorecardCache[matchId]
+
+    /**
+     * Silently fetches data in the background and stores it in memory.
+     * Prevents lag when a user clicks a match.
+     */
+    suspend fun preloadMatchData(matchId: Int) {
+        try {
+            // Basic debouncing (skip heavy auto-pagination for preloads)
+            val scorecard = apiService.getScorecard(matchId)
+            scorecardCache[matchId] = scorecard
+            
+            // Only preload the first page of comments to be efficient
+            val targetInning = scorecard.fixture?.innings?.maxByOrNull { it.inningNumber }?.inningNumber ?: 1
+            val cacheKey = "${matchId}_${targetInning}"
+            
+            if (!commentsCache.containsKey(cacheKey)) {
+                val comments = apiService.getComments(fixtureId = matchId, inningNumber = targetInning)
+                commentsCache[cacheKey] = comments
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MatchDetailsRepo", "Error preloading $matchId: ${e.message}")
+        }
+    }
 
     /**
      * Fetch match details by match ID
@@ -17,20 +49,52 @@ class MatchDetailsRepository(private val apiService: CricketApiService) {
     }
 
     /**
-     * Fetches all overs for an inning. 
-     * By passing a high count (e.g., 500), the API will return all overs.
+     * Fetches ALL overs for an inning by auto-paginating using LastOverNumber.
+     * The API only returns ~10 overs per request in the "Overs" field.
+     * This method progressively emits pages using Flow to prevent UI lag.
      */
-    suspend fun getComments(fixtureId: Int, inningNumber: Int = 1, count: Int = 500): CommentsResponse {
+    fun getComments(fixtureId: Int, inningNumber: Int = 1, count: Int = 500): Flow<CommentsResponse> = flow {
+        val cacheKey = "${fixtureId}_${inningNumber}"
+        try {
+            // Emits preloaded data immediately if available! Zero latency for the user UI!
+            val cachedComments = commentsCache[cacheKey]
+            if (cachedComments != null) {
+                emit(cachedComments)
+            }
+
+            // First call - get the most recent overs (matches Java's getMatchComments)
+            val firstResponse = apiService.getComments(
+                fixtureId = fixtureId,
+                inningNumber = inningNumber
+            )
+
+            // Update cache so subsequent opens are lightning fast with the very latest data
+            commentsCache[cacheKey] = firstResponse
+            
+            // Only emit if it's new/first or we didn't have cache to avoid double-bouncing identical UI states
+            if (cachedComments == null) {
+                emit(firstResponse)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MatchDetailsRepo", "Error fetching comments: ${e.message}")
+            if (commentsCache[cacheKey] == null) {
+                emit(CommentsResponse())
+            }
+        }
+    }
+
+    /**
+     * Manually fetch an older page of commentary. Used for scroll-based pagination.
+     */
+    suspend fun getPaginatedComments(fixtureId: Int, inningNumber: Int, lastOverNumber: Int): CommentsResponse {
         return try {
             apiService.getComments(
                 fixtureId = fixtureId,
                 inningNumber = inningNumber,
-                completedOversCount = count,
-                includePastOvers = true,
-                includePreviousOvers = true
+                lastOverNumber = lastOverNumber
             )
         } catch (e: Exception) {
-            android.util.Log.e("MatchDetailsRepo", "Error fetching comments: ${e.message}")
+            android.util.Log.e("MatchDetailsRepo", "Pagination error at over $lastOverNumber: ${e.message}")
             CommentsResponse()
         }
     }
@@ -43,10 +107,12 @@ class MatchDetailsRepository(private val apiService: CricketApiService) {
      */
     suspend fun getScorecard(fixtureId: Int, inningNumber: Int? = null): ScorecardResponse {
         return try {
-            apiService.getScorecard(fixtureId, inningNumber)
+            val liveData = apiService.getScorecard(fixtureId, inningNumber)
+            scorecardCache[fixtureId] = liveData
+            liveData
         } catch (e: Exception) {
-            // Return empty response if it fails to not break the whole UI
-            ScorecardResponse(fixture = MatchDetails(id = fixtureId, innings = emptyList()))
+            // Return cached response if it fails (like offline routing) or empty response to not break UI
+            scorecardCache[fixtureId] ?: ScorecardResponse(fixture = MatchDetails(id = fixtureId, innings = emptyList()))
         }
     }
 

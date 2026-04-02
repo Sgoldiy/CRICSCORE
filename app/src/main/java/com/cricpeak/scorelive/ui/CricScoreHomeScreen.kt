@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.imageLoader
+import coil.request.ImageRequest
 import com.cricpeak.scorelive.R
 import com.cricpeak.scorelive.ads.*
 import com.cricpeak.scorelive.ui.apicallfiles.CricketViewModel
@@ -184,6 +186,32 @@ fun CricScoreHomeScreen(
                         (fixtures.inProgressFixtures + fixtures.completedFixtures.take(5) + fixtures.upcomingFixtures.take(
                             5
                         )).take(5)
+                    }
+
+                    // Background Preloading: Data & Images for butter-smooth UI transitions
+                    LaunchedEffect(fixtures) {
+                        launch(kotlinx.coroutines.Dispatchers.IO) {
+                            val repo = com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsRepository.getInstance()
+                            val imgLoader = context.imageLoader
+                            // We aggressively target only the top 10 matches (live first, then featured) to protect bandwidth
+                            val toPreload = (fixtures.inProgressFixtures + topFiveMatches).distinctBy { it.id }.take(10)
+
+                            toPreload.forEach { match ->
+                                // 1. Preload API Match Scorecard & Comments Data (0ms latency later)
+                                repo.preloadMatchData(match.id)
+
+                                // 2. Preload Team Logos into Memory
+                                imgLoader.enqueue(ImageRequest.Builder(context).data(match.homeTeam.logoUrl).build())
+                                imgLoader.enqueue(ImageRequest.Builder(context).data(match.awayTeam.logoUrl).build())
+
+                                // 3. Preload detailed Player Headshots from the cached scorecard
+                                repo.getCachedScorecard(match.id)?.players?.forEach { player ->
+                                    if (!player.imageUrl.isNullOrEmpty()) {
+                                        imgLoader.enqueue(ImageRequest.Builder(context).data(player.imageUrl).build())
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     PullToRefreshBox(

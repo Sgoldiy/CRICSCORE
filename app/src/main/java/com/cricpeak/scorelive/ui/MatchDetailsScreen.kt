@@ -3,12 +3,21 @@ package com.cricpeak.scorelive.ui
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,6 +30,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -55,9 +65,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PaintingStyle.Companion.Stroke
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -85,6 +98,7 @@ import com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsState
 import com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsViewModel
 import com.cricpeak.scorelive.ui.apicallfiles.MatchInfo
 import com.cricpeak.scorelive.ui.apicallfiles.OverSummary
+import com.cricpeak.scorelive.ui.apicallfiles.PlayerDetail
 import com.cricpeak.scorelive.ui.apicallfiles.ScoreAnimation
 import com.cricpeak.scorelive.ui.apicallfiles.getBattingTeam
 import com.cricpeak.scorelive.ui.apicallfiles.getFirstInning
@@ -92,13 +106,14 @@ import com.cricpeak.scorelive.ui.apicallfiles.getFourthInning
 import com.cricpeak.scorelive.ui.apicallfiles.getSampleInningsData
 import com.cricpeak.scorelive.ui.apicallfiles.getSecondInning
 import com.cricpeak.scorelive.ui.apicallfiles.getThirdInning
-import com.cricpeak.scorelive.ui.apicallfiles.toUIInningsData
 import com.cricpeak.scorelive.ui.components.RewardPolicyDialog
 import com.cricpeak.scorelive.ui.theme.CardBackground
 import com.cricpeak.scorelive.ui.theme.DarkBackground
 import com.cricpeak.scorelive.ui.theme.GilroyFontFamily
 import com.cricpeak.scorelive.ui.theme.RadialTeal
 import com.cricpeak.scorelive.ui.theme.TextGray
+import kotlin.math.cos
+import kotlin.math.sin
 
 // Data class for Player from API
 data class Player(
@@ -144,6 +159,7 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
     var unlockedUntilOver by remember {
         mutableIntStateOf(RewardPrefs.getOversUnlockedUntil(context, matchId))
     }
+    var isFirstMatchLoad by remember { mutableStateOf(true) }
 
     // Global Ad pre-loading for Match Details
     LaunchedEffect(adsState) {
@@ -276,11 +292,9 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                 // Set initial "current" over as authorized if it's the first load
                 if (matchData.isLive) {
                     if (unlockedUntilOver == -1) {
-                        val currentOver =
-                            matchData.innings.lastOrNull()?.oversBowled?.toDoubleOrNull()?.toInt()
-                                ?: 0
-                        // "running over and next two overs free" -> current + 1 (running) + 2 (free) = +3
-                        unlockedUntilOver = currentOver + 3
+                        val currentOverVal = matchData.innings.lastOrNull()?.oversBowled?.toDoubleOrNull()?.toInt() ?: 0
+                        // Automatically unlock current over + next 2 overs
+                        unlockedUntilOver = currentOverVal + 3
                         RewardPrefs.setOversUnlockedUntil(context, matchId, unlockedUntilOver)
                     }
 
@@ -292,6 +306,49 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
 
             is MatchDetailsState.Loading -> {}
             is MatchDetailsState.Error -> {}
+        }
+    }
+
+    // ✅ Automatic Reward Ad Trigger Logic
+    // Only triggers when the match is live and the current over exceeds the unlocked limit
+    LaunchedEffect(matchDetailsState) {
+        val state = matchDetailsState
+        if (state is MatchDetailsState.Success) {
+            val matchData = state.matchData
+            if (matchData.isLive) {
+                val currentOverInt = matchData.innings.lastOrNull()?.oversBowled?.toDoubleOrNull()?.toInt() ?: 0
+                
+                // USER REQUEST: Don't show ad immediately on resume/first load
+                if (isFirstMatchLoad) {
+                    if (currentOverInt > unlockedUntilOver) {
+                        // User came back and it's already past the limit -> Give 2 free overs from here
+                        unlockedUntilOver = currentOverInt + 2
+                        RewardPrefs.setOversUnlockedUntil(context, matchId, unlockedUntilOver)
+                    }
+                    isFirstMatchLoad = false
+                    return@LaunchedEffect
+                }
+
+                // If the user has progressed beyond the unlocked limit, show ad automatically
+                if (currentOverInt > unlockedUntilOver) {
+                    val rewardConfig = adsState.reward_live
+                    if (rewardConfig.enabled && rewardConfig.ads_unit.isNotEmpty() && activity != null) {
+                        if (RewardPrefs.isPolicyAccepted(context)) {
+                            AdRewardManager.showAd(
+                                activity = activity,
+                                adUnitId = rewardConfig.ads_unit,
+                                onRewardEarned = {
+                                    unlockedUntilOver = currentOverInt + 2 // Unlock current and next 2 overs
+                                    RewardPrefs.setOversUnlockedUntil(context, matchId, unlockedUntilOver)
+                                }
+                            )
+                        } else {
+                            rewardPendingOver = currentOverInt
+                            showRewardPolicyDialog = true
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -475,21 +532,25 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
 
                         // Conditional Content based on selected tab with animation
                         item {
-                            AnimatedContent(
-                                targetState = selectedTabIndex,
-                                transitionSpec = {
-                                    if (targetState > initialState) {
-                                        slideInHorizontally { width -> width } + fadeIn() togetherWith
-                                                slideOutHorizontally { width -> -width } + fadeOut()
-                                    } else {
-                                        slideInHorizontally { width -> -width } + fadeIn() togetherWith
-                                                slideOutHorizontally { width -> width } + fadeOut()
-                                    }
-                                },
-                                label = "TabContentTransition"
-                            ) { targetTabIndex ->
+                            var isTabRendered by remember { mutableStateOf(false) }
+                            LaunchedEffect(selectedTabIndex) {
+                                isTabRendered = false
+                                kotlinx.coroutines.delay(50) // Tiny delay to let the UI breathe
+                                isTabRendered = true
+                            }
+
+                            if (!isTabRendered) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(300.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(color = Color(0xFF00BFA5))
+                                }
+                            } else {
                                 Column(modifier = Modifier.fillMaxWidth()) {
-                                    when (targetTabIndex) {
+                                    when (selectedTabIndex) {
                                         0 -> { // Summary
                                             SquadView(
                                                 "${matchData.homeTeam.name} Squad",
@@ -507,9 +568,11 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                     role = p.type ?: "Player",
                                                                     imageUrl = p.imageUrl ?: "",
                                                                     battingStyle = p.battingStyle
-                                                                        ?: p.battingHand ?: "N/A",
+                                                                        ?: p.battingHand
+                                                                        ?: "N/A",
                                                                     bowlingStyle = p.bowlingStyle
-                                                                        ?: p.bowlingType ?: "N/A",
+                                                                        ?: p.bowlingType
+                                                                        ?: "N/A",
                                                                     dob = p.dob,
                                                                     birthPlace = p.birthPlace,
                                                                     height = p.height,
@@ -549,9 +612,11 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                     role = p.type ?: "Player",
                                                                     imageUrl = p.imageUrl ?: "",
                                                                     battingStyle = p.battingStyle
-                                                                        ?: p.battingHand ?: "N/A",
+                                                                        ?: p.battingHand
+                                                                        ?: "N/A",
                                                                     bowlingStyle = p.bowlingStyle
-                                                                        ?: p.bowlingType ?: "N/A",
+                                                                        ?: p.bowlingType
+                                                                        ?: "N/A",
                                                                     dob = p.dob,
                                                                     birthPlace = p.birthPlace,
                                                                     height = p.height,
@@ -568,7 +633,8 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                         }
 
                                         1 -> { // Scorecard
-                                            val fullInningsList = mutableListOf(innings1, innings2)
+                                            val fullInningsList =
+                                                mutableListOf(innings1, innings2)
                                             // Always add extra innings if they are available, regardless of gameType check
                                             innings3?.let { fullInningsList.add(it) }
                                             innings4?.let { fullInningsList.add(it) }
@@ -627,7 +693,9 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                 val isSelected =
                                                                     commentsData.currentInning == i
                                                                 val inningData =
-                                                                    matchData.innings.getOrNull(i - 1)
+                                                                    matchData.innings.getOrNull(
+                                                                        i - 1
+                                                                    )
                                                                 val teamShortName =
                                                                     if (inningData != null) {
                                                                         matchData.getBattingTeam(
@@ -660,7 +728,9 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                             0xFF00BFA5
                                                                         ) else CardBackground
                                                                     ),
-                                                                    shape = RoundedCornerShape(12.dp)
+                                                                    shape = RoundedCornerShape(
+                                                                        12.dp
+                                                                    )
                                                                 ) {
                                                                     Column(
                                                                         modifier = Modifier
@@ -694,11 +764,21 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                             modifier = Modifier.padding(24.dp)
                                                         )
                                                     } else {
-                                                        val commentaryList = commentsData.commentary
+                                                        val commentaryList =
+                                                            commentsData.commentary
+                                                        val isPaginating by viewModel.isPaginatingComments.collectAsState()
+
                                                         commentaryList.forEachIndexed { index, entry ->
+                                                            // Trigger pagination as user scrolls down
+                                                            if (index == commentaryList.size - 2) {
+                                                                LaunchedEffect(index) {
+                                                                    viewModel.loadMoreComments()
+                                                                }
+                                                            }
+
                                                             when (entry) {
                                                                 is CommentaryEntry.BallCommentary -> {
-                                                                    CommentaryItemFromApi(entry)
+                                                                    CommentaryItemFromApi(entry, matchData.players)
                                                                 }
 
                                                                 is CommentaryEntry.OverScorecard -> {
@@ -711,9 +791,13 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                         Box(
                                                                             modifier = Modifier
                                                                                 .fillMaxWidth()
-                                                                                .padding(vertical = 16.dp)
+                                                                                .padding(
+                                                                                    vertical = 16.dp
+                                                                                )
                                                                         ) {
-                                                                            BannerAdView(adUnitId = adsState.overs_banner.ads_unit)
+                                                                            BannerAdView(
+                                                                                adUnitId = adsState.overs_banner.ads_unit
+                                                                            )
                                                                         }
                                                                     }
 
@@ -766,6 +850,21 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
                                                                 }
                                                             }
                                                         }
+
+                                                        // Loading indicator when fetching older overs
+                                                        if (isPaginating) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .padding(16.dp),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                CircularProgressIndicator(
+                                                                    color = Color(0xFF00BFA5),
+                                                                    modifier = Modifier.size(32.dp)
+                                                                )
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -780,7 +879,8 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
         }
     }
 
-    // Show Player Profile as an overlay
+
+// Show Player Profile as an overlay
     selectedPlayerProfile?.let { player ->
         Box(modifier = Modifier.fillMaxSize()) {
             PlayerProfileScreen(
@@ -790,7 +890,7 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
         }
     }
 
-    // General Reward Policy Dialog (for Ads)
+// General Reward Policy Dialog (for Ads)
     if (showRewardPolicyDialog) {
         RewardPolicyDialog(
             onAccept = {
@@ -823,7 +923,7 @@ fun MatchDetailsScreen(matchId: Int, onBackClick: () -> Unit) {
         )
     }
 
-    // Match Details Specific Policy Dialog
+// Match Details Specific Policy Dialog
     if (showMatchDetailsPolicyDialog) {
         RewardPolicyDialog(
             onAccept = {
@@ -948,14 +1048,14 @@ fun DetailScoreCard(matchData: MatchDetailsData, scoreAnimation: ScoreAnimation)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(0.7.dp)
+                            .height(1.dp)
                             .background(
                                 brush = Brush.horizontalGradient(
                                     colors = listOf(
                                         Color.Transparent,
-                                        Color.White.copy(alpha = 0.15f),
-                                        Color.White.copy(alpha = 0.6f),
-                                        Color.White.copy(alpha = 0.15f),
+                                        Color.White.copy(alpha = 0.1f),
+                                        Color.White.copy(alpha = 0.3f),
+                                        Color.White.copy(alpha = 0.1f),
                                         Color.Transparent
                                     )
                                 )
@@ -1332,55 +1432,69 @@ fun RecentOverStats(recentOvers: List<OverSummary>) {
 
     // Auto-scroll to the end (latest overs on the right)
     LaunchedEffect(recentOvers) {
-        scrollState.animateScrollTo(scrollState.maxValue)
+        if (recentOvers.isNotEmpty()) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        if (recentOvers.isEmpty()) {
-            Text(
-                "Recent Balls:",
-                color = Color.White,
-                fontSize = 14.sp,
-                fontFamily = GilroyFontFamily
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("--", color = TextGray, fontSize = 12.sp, fontFamily = GilroyFontFamily)
-        } else {
-            recentOvers.forEach { over ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "Ov ${over.overNumber}",
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 11.sp,
-                            fontFamily = GilroyFontFamily
-                        )
-                        Text(
-                            text = "(${over.totalRuns}-${over.totalWickets})",
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = GilroyFontFamily
-                        )
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Text(
+            text = "Recent Balls",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 12.sp,
+            fontFamily = GilroyFontFamily,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp)
+        )
+        
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (recentOvers.isEmpty()) {
+                Text("--", color = TextGray, fontSize = 12.sp, fontFamily = GilroyFontFamily, modifier = Modifier.padding(start = 4.dp))
+            } else {
+                recentOvers.forEachIndexed { index, over ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .background(Color.White.copy(0.05f), RoundedCornerShape(30.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(end = 4.dp)
+                        ) {
+                            Text(
+                                text = "Ov ${over.overNumber}",
+                                color = Color.White.copy(alpha = 0.5f),
+                                fontSize = 10.sp,
+                                fontFamily = GilroyFontFamily
+                            )
+                            Text(
+                                text = "${over.totalRuns}-${over.totalWickets}",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = GilroyFontFamily
+                            )
+                        }
+                        over.balls.forEach { ball ->
+                            BallStat(ball.displayText, ball.displayColor)
+                        }
                     }
-                    over.balls.forEach { ball ->
-                        BallStat(ball.displayText, ball.displayColor)
-                    }
-                    if (over.isCompleted) {
-                        Box(
+                    
+                    // Divider between overs if not the last one
+                    if (index < recentOvers.size - 1) {
+                         Box(
                             modifier = Modifier
-                                .height(24.dp)
-                                .width(1.dp)
+                                .height(20.dp)
+                                .width(1.5.dp)
                                 .background(Color.White.copy(alpha = 0.1f))
                         )
                     }
@@ -1614,76 +1728,127 @@ fun InfoRow(label: String, value: String) {
 }
 
 @Composable
-fun CommentaryItemFromApi(ball: CommentaryEntry.BallCommentary) {
-    Row(
+fun CommentaryItemFromApi(ball: CommentaryEntry.BallCommentary, players: List<PlayerDetail> = emptyList()) {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    val batter = players.find { it.id == ball.batterId }
+    val isLeftHanded = batter?.battingHand?.contains("Left", ignoreCase = true) == true ||
+                       batter?.battingStyle?.contains("Left", ignoreCase = true) == true
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .clickable(enabled = ball.shotAngle != null) {
+                isExpanded = !isExpanded
+            }
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(ball.color),
-            contentAlignment = Alignment.Center
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = ball.ballResult,
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(ball.color),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(
-                    text = ball.over,
+                    text = ball.ballResult,
                     color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    fontFamily = GilroyFontFamily
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = ball.title,
-                    color = Color.White,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 15.sp,
-                    fontFamily = GilroyFontFamily
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = ball.description,
-                color = TextGray,
-                fontSize = 13.sp,
-                fontFamily = GilroyFontFamily,
-                lineHeight = 18.sp
-            )
 
-            val validBadges = listOfNotNull(
-                ball.length?.takeIf { it != "Null" && it.isNotEmpty() }
-                    ?.let { "Length" to it.formatIdentifier() },
-                ball.line?.takeIf { it != "Null" && it.isNotEmpty() }
-                    ?.let { "Line" to it.formatIdentifier() },
-                ball.shotType?.takeIf { it != "Null" && it.isNotEmpty() }
-                    ?.let { "Shot" to it.formatIdentifier() },
-                ball.fieldingPosition?.takeIf { it != "Null" && it.isNotEmpty() }
-                    ?.let { "To" to it.formatIdentifier() }
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = ball.over,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        fontFamily = GilroyFontFamily
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = ball.title,
+                        color = Color.White,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp,
+                        fontFamily = GilroyFontFamily
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = ball.description,
+                    color = TextGray,
+                    fontSize = 13.sp,
+                    fontFamily = GilroyFontFamily,
+                    lineHeight = 18.sp
+                )
 
-            if (validBadges.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                val validBadges = listOfNotNull(
+                    ball.length?.takeIf { it != "Null" && it.isNotEmpty() }
+                        ?.let { "Length" to it.formatIdentifier() },
+                    ball.line?.takeIf { it != "Null" && it.isNotEmpty() }
+                        ?.let { "Line" to it.formatIdentifier() },
+                    ball.shotType?.takeIf { it != "Null" && it.isNotEmpty() }
+                        ?.let { "Shot" to it.formatIdentifier() },
+                    ball.fieldingPosition?.takeIf { it != "Null" && it.isNotEmpty() }
+                        ?.let { "To" to it.formatIdentifier() }
+                )
+
+                if (validBadges.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        validBadges.forEach { (label, value) ->
+                            BadgeItem(label, value)
+                        }
+                    }
+                }
+
+                if (ball.shotAngle != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (isExpanded) "👇 Hide Shot View" else "👉 Shot View (360°)",
+                        color = Color(0xFF00BFA5),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = GilroyFontFamily
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = isExpanded,
+                    enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
                 ) {
-                    validBadges.forEach { (label, value) ->
-                        BadgeItem(label, value)
+                    if (ball.shotAngle != null) {
+                        ShotViewCanvas(
+                            angle = ball.shotAngle,
+                            magnitude = ball.shotMagnitude ?: 100,
+                            runs = ball.runs,
+                            isWicket = ball.isWicket,
+                            dismissalType = ball.dismissalType,
+                            fieldingPosition = ball.fieldingPosition,
+                            isAirControlled = ball.isAirControlled,
+                            isAirNotControlled = ball.isAirNotControlled,
+                            isWide = ball.isWide,
+                            isNoBall = ball.isNoBall,
+                            isByes = ball.isByes,
+                            isLegByes = ball.isLegByes,
+                            battingConnectionId = ball.battingConnectionId,
+                            battingFeetId = ball.battingFeetId,
+                            catchDifficulty = ball.catchDifficulty,
+                            isLeftHanded = isLeftHanded
+                        )
                     }
                 }
             }
@@ -1691,6 +1856,260 @@ fun CommentaryItemFromApi(ball: CommentaryEntry.BallCommentary) {
     }
 }
 
+@Composable
+fun ShotViewCanvas(
+    angle: Int,
+    magnitude: Int,
+    runs: Int,
+    isWicket: Boolean,
+    dismissalType: String? = null,
+    fieldingPosition: String? = null,
+    isAirControlled: Boolean = false,
+    isAirNotControlled: Boolean = false,
+    isWide: Boolean = false,
+    isNoBall: Boolean = false,
+    isByes: Boolean = false,
+    isLegByes: Boolean = false,
+    battingConnectionId: String? = null,
+    battingFeetId: String? = null,
+    catchDifficulty: Int? = null,
+    isLeftHanded: Boolean = false
+) {
+    val progress = remember { Animatable(0f) }
+    val pulse = remember { Animatable(0f) }
+
+    LaunchedEffect(Unit) {
+        progress.animateTo(1f, tween(1200, easing = FastOutSlowInEasing))
+        if (runs >= 4 || isWicket) {
+            pulse.animateTo(1f, tween(400, easing = FastOutSlowInEasing))
+            pulse.animateTo(0f, tween(400, easing = FastOutSlowInEasing))
+        }
+    }
+
+    // Professional field map (Standard RHB)
+    val positions = remember {
+        listOf(
+            Triple("Wicketkeeper", 0f, true),
+            Triple("Slip", 25f, true),
+            Triple("Gully", 45f, true),
+            Triple("Point", 90f, true),
+            Triple("Deep Point", 100f, false),
+            Triple("Cover", 125f, true),
+            Triple("Extra Cover", 145f, true),
+            Triple("Deep Cover", 135f, false),
+            Triple("Mid Off", 165f, true),
+            Triple("Long Off", 175f, false),
+            Triple("Long On", 185f, false),
+            Triple("Mid On", 195f, true),
+            Triple("Midwicket", 235f, true),
+            Triple("Deep Midwicket", 225f, false),
+            Triple("Square Leg", 270f, true),
+            Triple("Deep Square Leg", 280f, false),
+            Triple("Fine Leg", 315f, true),
+            Triple("Deep Fine Leg", 325f, false),
+            Triple("Third Man", 60f, false)
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .padding(12.dp)
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2, size.height / 2)
+            val radius = size.width / 2.3f
+            val innerRadius = radius * 0.55f
+
+            // 1. Professional Ground
+            drawCircle(
+                brush = Brush.radialGradient(
+                    0.0f to Color(0xFF2E7D32),
+                    1.0f to Color(0xFF1B5E20),
+                    center = center,
+                    radius = radius
+                ),
+                radius = radius,
+                center = center
+            )
+
+            // Boundary Flare/Glow
+            if (runs >= 4) {
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.2f + pulse.value * 0.4f),
+                    radius = radius + (pulse.value * 12f),
+                    center = center,
+                    style = Stroke(6f)
+                )
+            }
+            drawCircle(Color.White.copy(0.7f), radius, center, style = Stroke(4f))
+
+            // 30-Yard Circle
+            drawCircle(
+                Color.White.copy(0.3f),
+                innerRadius,
+                center,
+                style = Stroke(2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
+            )
+
+            // Pitch
+            val pitchW = radius * 0.12f
+            val pitchH = radius * 0.48f
+            drawRoundRect(
+                color = Color(0xFFD7B899),
+                topLeft = Offset(center.x - pitchW / 2, center.y - pitchH / 2),
+                size = Size(pitchW, pitchH),
+                cornerRadius = CornerRadius(4f)
+            )
+
+            // 2. Fielding Setup (Horizontal Mirror for LHB)
+            positions.forEach { (name, baseAngle, isInside) ->
+                val mappedAngle = if (isLeftHanded) (360f - baseAngle) % 360f else baseAngle
+                val rad = Math.toRadians(mappedAngle.toDouble())
+
+                val dist = if (isInside) innerRadius * 0.85f else radius * 0.92f
+                val lx = center.x + (dist * sin(rad).toFloat())
+                val ly = center.y - (dist * cos(rad).toFloat())
+
+                val isRelevant = fieldingPosition?.contains(name, ignoreCase = true) == true
+
+                if (isRelevant) {
+                    drawCircle(Color(0xFFFFA726), 10f * progress.value, Offset(lx, ly))
+                    drawCircle(Color.White.copy(0.3f), 18f * progress.value, Offset(lx, ly))
+
+                    // Label Pill Backdrop
+                    val rectW = name.length * 12f + 30f
+                    drawRoundRect(
+                        color = Color(0xFF00BFA5).copy(alpha = 0.9f),
+                        topLeft = Offset(lx - rectW/2, ly - (if (ly > center.y) -20f else 55f)),
+                        size = Size(rectW, 36f),
+                        cornerRadius = CornerRadius(18f)
+                    )
+                }
+
+                drawContext.canvas.nativeCanvas.drawText(
+                    name.uppercase(),
+                    lx,
+                    ly + (if (ly > center.y) 46f else -30f),
+                    android.graphics.Paint().apply {
+                        color = (if (isRelevant) android.graphics.Color.WHITE else 0x55FFFFFF.toInt())
+                        textSize = 20f
+                        textAlign = android.graphics.Paint.Align.CENTER
+                        typeface = android.graphics.Typeface.create("Gilroy", android.graphics.Typeface.BOLD)
+                    }
+                )
+            }
+
+            // 3. Trajectory Physics (Snap to Fielder if provided)
+            val matchedPos = positions.find { fieldingPosition?.contains(it.first, ignoreCase = true) == true }
+            val rawAngle = matchedPos?.second ?: angle.toFloat()
+            val visualAngle = if (isLeftHanded) (360f - rawAngle) % 360f else rawAngle
+            val shotRad = Math.toRadians(visualAngle.toDouble())
+
+            val baseDist = when {
+                runs >= 6 -> radius * 1.35f
+                runs >= 4 -> radius * 1.08f
+                runs >= 1 -> radius * (0.35f + (runs * 0.15f))
+                isWicket && dismissalType == "Caught" -> radius * 0.75f
+                else -> radius * 0.3f
+            }
+            val magFactor = (magnitude / 220f).coerceIn(0.5f, 1.4f)
+            val finalDist = (baseDist * magFactor).coerceAtMost(radius * 1.55f)
+
+            if (isWicket && dismissalType == "Bowled") {
+                drawCircle(Color.Red.copy(0.4f * progress.value), 40f * progress.value, center)
+            } else {
+                val tx = center.x + (finalDist * sin(shotRad).toFloat())
+                val ty = center.y - (finalDist * cos(shotRad).toFloat())
+
+                val currX = center.x + (tx - center.x) * progress.value
+                val currY = center.y - (center.y - ty) * progress.value
+
+                val isAir = isAirNotControlled || isAirControlled || runs >= 4
+                val isMisTimed = battingConnectionId == "MisTimed"
+
+                // Shadow
+                if (isAir) {
+                    drawLine(
+                        Color.Black.copy(0.3f * progress.value),
+                        center,
+                        Offset(currX, currY),
+                        strokeWidth = 4f,
+                        cap = StrokeCap.Round
+                    )
+                }
+
+                val wobble = if (isMisTimed) (sin(progress.value * 25f) * 6f) else 0f
+                val elev = if (isAir) (sin(progress.value * Math.PI.toFloat()) * -45f) else 0f
+
+                val shotColor = when {
+                    isWicket -> Color(0xFFFF5252)
+                    runs == 6 -> Color(0xFF9C27B0)
+                    runs == 4 -> Color(0xFF2196F3)
+                    runs > 0 -> Color(0xFF4CAF50)
+                    else -> Color.White
+                }
+
+                // Glowing Trail
+                if (runs >= 4 && progress.value > 0.3f) {
+                    val trailScale = (progress.value - 0.3f) * 1.4f
+                    drawLine(
+                        brush = Brush.linearGradient(listOf(shotColor.copy(0f), shotColor.copy(0.4f))),
+                        start = center,
+                        end = Offset(center.x + (tx - center.x) * trailScale, center.y + (ty - center.y) * trailScale + elev),
+                        strokeWidth = 18f,
+                        cap = StrokeCap.Round
+                    )
+                }
+
+                // Main Line
+                drawLine(
+                    shotColor,
+                    center,
+                    Offset(currX + wobble, currY + elev),
+                    strokeWidth = if (runs >= 4) 14f else 8f,
+                    cap = StrokeCap.Round
+                )
+
+                // Ball & Glow
+                drawCircle(Color.White, 8f, Offset(currX + wobble, currY + elev))
+                drawCircle(shotColor.copy(0.4f), 15f, Offset(currX + wobble, currY + elev))
+
+                // Outcome Banner
+                if (progress.value > 0.98f) {
+                    val label = when {
+                        isWicket -> "OUT!"
+                        runs == 6 -> "SIX! 🚀"
+                        runs == 4 -> "FOUR! ⚡"
+                        runs > 0 -> "$runs RUNS"
+                        else -> "DOT"
+                    }
+                    val rectW = label.length * 16f + 60f
+                    val labelYOffset = if (ty > center.y) 65f else -105f
+
+                    drawRoundRect(
+                        color = shotColor.copy(0.95f),
+                        topLeft = Offset(tx - rectW/2, ty + labelYOffset),
+                        size = Size(rectW, 46f),
+                        cornerRadius = CornerRadius(23f)
+                    )
+                    drawContext.canvas.nativeCanvas.drawText(
+                        label.uppercase(),
+                        tx,
+                        ty + labelYOffset + 34f,
+                        android.graphics.Paint().apply {
+                            color = android.graphics.Color.WHITE
+                            textSize = 28f
+                            textAlign = android.graphics.Paint.Align.CENTER
+                            typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
 @Composable
 fun OverScorecardItem(entry: CommentaryEntry.OverScorecard) {
     Card(

@@ -34,9 +34,7 @@ interface CricketApiService {
     suspend fun getComments(
         @Query("FixtureId") fixtureId: Int,
         @Query("InningNumber") inningNumber: Int = 1,
-        @Query("CompletedOversCount") completedOversCount: Int = 500,
-        @Query("IncludePastOvers") includePastOvers: Boolean = true,
-        @Query("IncludePreviousOvers") includePreviousOvers: Boolean = true
+        @Query("LastOverNumber") lastOverNumber: Int? = null
     ): CommentsResponse
 
     companion object {

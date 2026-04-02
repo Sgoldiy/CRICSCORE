@@ -205,10 +205,21 @@ data class BallDetails(
     @SerializedName("Comments") val comments: List<CommentDetails>? = null,
     @SerializedName("BowlerPlayerId") val bowlerId: Int = 0,
     @SerializedName("BattingPlayerId") val batterId: Int = 0,
+    @SerializedName("NonStrikeBattingPlayerId") val nonStrikeBattingPlayerId: Int = 0,
     @SerializedName("LengthTypeId") val lengthTypeId: String? = null,
     @SerializedName("LineTypeId") val lineTypeId: String? = null,
     @SerializedName("BattingShotTypeId") val battingShotTypeId: String? = null,
-    @SerializedName("FieldingPosition") val fieldingPosition: String? = null
+    @SerializedName("FieldingPosition") val fieldingPosition: String? = null,
+    @SerializedName("ShotAngle") val shotAngle: Int? = null,
+    @SerializedName("ShotMagnitude") val shotMagnitude: Int? = null,
+    @SerializedName("DismissalType") val dismissalType: String? = null,
+    @SerializedName("IsAirControlled") val isAirControlled: Boolean = false,
+    @SerializedName("IsAirNotControlled") val isAirNotControlled: Boolean = false,
+    @SerializedName("CatchDifficulty") val catchDifficulty: Int? = null,
+    @SerializedName("BattingConnectionId") val battingConnectionId: String? = null,
+    @SerializedName("BattingFeetId") val battingFeetId: String? = null,
+    @SerializedName("NoBallsCount") val noBallsCount: Int = 0,
+    @SerializedName("RunsWide") val runsWide: Int = 0
 )
 
 data class CommentDetails(
