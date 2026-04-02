@@ -5,9 +5,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cricpeak.scorelive.ads.RewardPrefs
+import com.cricpeak.scorelive.ui.Player
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlin.collections.find
+import kotlin.random.Random
 
 sealed class MatchDetailsState {
     object Loading : MatchDetailsState()
@@ -153,6 +155,10 @@ class MatchDetailsViewModel(
     // Reward Ad State
     private val _unlockedUntilOver = MutableStateFlow(2)
     val unlockedUntilOver: StateFlow<Int> = _unlockedUntilOver
+
+    // Fantasy Team State
+    private val _fantasyTeam = MutableStateFlow<List<Player>?>(null)
+    val fantasyTeam: StateFlow<List<Player>?> = _fantasyTeam
 
     private var currentMatchData: MatchDetailsData? = null
     private var refreshJob: Job? = null
@@ -535,5 +541,38 @@ class MatchDetailsViewModel(
             result.onSuccess { _predictionState.value = PredictionState.Success(it) }.onFailure { _predictionState.value = PredictionState.Error(it.message ?: "Unknown error") }
         }
     }
+
+    fun generateFantasyTeam(players: List<PlayerDetail>, homeTeamId: Int, awayTeamId: Int) {
+        viewModelScope.launch {
+            val homePlayers = players.filter { it.teamId == homeTeamId }
+            val awayPlayers = players.filter { it.teamId == awayTeamId }
+            
+            if (homePlayers.isEmpty() || awayPlayers.isEmpty()) return@launch
+
+            // Logic: 11 players total. Min 4, Max 7 from each team.
+            val homeCount = Random.nextInt(4, 8)
+            val awayCount = 11 - homeCount
+            
+            val selectedHome = homePlayers.shuffled().take(homeCount)
+            val selectedAway = awayPlayers.shuffled().take(awayCount)
+            
+            _fantasyTeam.value = (selectedHome + selectedAway).shuffled().map { p ->
+                Player(
+                    id = p.id,
+                    name = p.displayName,
+                    imageUrl = p.imageUrl ?: "",
+                    role = p.type ?: "Player",
+                    teamId = p.teamId,
+                    battingStyle = p.battingStyle ?: p.battingHand ?: "N/A",
+                    bowlingStyle = p.bowlingStyle ?: p.bowlingType ?: "N/A"
+                )
+            }
+        }
+    }
+
+    fun clearFantasyTeam() {
+        _fantasyTeam.value = null
+    }
+
     fun retry(matchId: Int) = loadMatchDetails(matchId)
 }

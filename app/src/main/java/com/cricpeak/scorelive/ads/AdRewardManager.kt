@@ -18,7 +18,9 @@ object AdRewardManager {
     private val loadingStates = mutableMapOf<String, Boolean>()
     private var isShowing = false
 
-    fun loadAd(context: Context, adUnitId: String) {
+    fun loadAd(context: Context, adUnitId: String, isPremium: Boolean) {
+        if (isPremium) return
+
         if (adUnitId.isEmpty() || loadingStates[adUnitId] == true || rewardedAds[adUnitId] != null) return
 
         loadingStates[adUnitId] = true
@@ -42,17 +44,23 @@ object AdRewardManager {
     fun showAd(
         activity: Activity, 
         adUnitId: String, 
+        isPremium: Boolean, // Added isPremium parameter
         onRewardEarned: () -> Unit, 
         onAdDismissed: () -> Unit = {},
         onAdFailed: () -> Unit = {}
     ) {
+        if (isPremium) { // If premium, just call onRewardEarned immediately as if ad was watched
+            onRewardEarned()
+            return
+        }
+
         if (isShowing) return
         
         val ad = rewardedAds[adUnitId]
         if (ad == null) {
             Log.d(TAG, "The rewarded ad wasn't ready yet.")
             Toast.makeText(activity, "Ad is still loading, please wait...", Toast.LENGTH_SHORT).show()
-            loadAd(activity, adUnitId)
+            loadAd(activity, adUnitId, isPremium) // Pass isPremium
             onAdFailed()
             return
         }
@@ -62,7 +70,7 @@ object AdRewardManager {
                 Log.d(TAG, "Ad was dismissed.")
                 rewardedAds[adUnitId] = null
                 isShowing = false
-                loadAd(activity, adUnitId) // Preload next
+                loadAd(activity, adUnitId, isPremium) // Preload next, pass isPremium
                 onAdDismissed()
             }
 
@@ -70,7 +78,7 @@ object AdRewardManager {
                 Log.e(TAG, "Ad failed to show: ${adError.message}")
                 rewardedAds[adUnitId] = null
                 isShowing = false
-                loadAd(activity, adUnitId)
+                loadAd(activity, adUnitId, isPremium) // Pass isPremium
                 onAdFailed()
             }
 

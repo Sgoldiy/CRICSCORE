@@ -1,7 +1,10 @@
 [versions]
 agp = "8.7.3"
+androidSdk = "3.3.7"
 converterGson = "3.0.0"
 coreKtx = "1.15.0"
+datastorePreferences = "1.2.1"
+izootoAndroidSdk = "2.4.0"
 junit = "4.13.2"
 junitVersion = "1.2.1"
 espressoCore = "3.6.1"
@@ -22,10 +25,15 @@ lifecycleProcess = "2.8.7"
 googleServices = "4.4.4"
 firebaseBom = "33.7.0"
 billing = "7.1.1"
+workRuntime = "2.11.2"
 
 [libraries]
+android-sdk = { module = "com.izooto:android-sdk", version.ref = "androidSdk" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastorePreferences" }
+androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "workRuntime" }
 converter-gson = { module = "com.squareup.retrofit2:converter-gson", version.ref = "converterGson" }
+izooto-android-sdk = { module = "com.izooto:izooto-android-sdk", version.ref = "izootoAndroidSdk" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
@@ -51,6 +59,8 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 play-services-ads = { group = "com.google.android.gms", name = "play-services-ads", version.ref = "playServicesAds" }
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-database = { group = "com.google.firebase", name = "firebase-database" }
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
+firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics" }
 play-billing = { group = "com.android.billingclient", name = "billing", version.ref = "billing" }
 play-billing-ktx = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "billing" }
 

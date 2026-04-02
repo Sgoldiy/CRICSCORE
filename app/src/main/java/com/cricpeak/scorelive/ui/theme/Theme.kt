@@ -19,6 +19,19 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = Color.White,
 )
 
+private val GoldColorScheme = darkColorScheme(
+    primary = GoldPrimary,
+    secondary = GoldSecondary,
+    tertiary = GoldPrimary,
+    background = GoldBackground,
+    surface = Color(0xFF2A2A1A),
+    onPrimary = Color.Black,
+    onSecondary = Color.Black,
+    onTertiary = Color.Black,
+    onBackground = GoldPrimary,
+    onSurface = GoldPrimary,
+)
+
 private val LightColorScheme = lightColorScheme(
     primary = AccentGreen,
     secondary = PurpleGrey40,
@@ -34,10 +47,15 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun CRICPEAKTheme(
-    darkTheme: Boolean = true, // Default to dark theme as per image
+    darkTheme: Boolean = true,
+    isPremium: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val colorScheme = when {
+        isPremium -> GoldColorScheme
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
+    }
 
     MaterialTheme(
         colorScheme = colorScheme,

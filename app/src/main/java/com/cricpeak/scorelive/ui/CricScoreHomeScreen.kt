@@ -86,6 +86,7 @@ fun CricScoreHomeScreen(
     onPredictionClick: (Int) -> Unit,
     onMenuClick: () -> Unit,
     onPurchaseClick: () -> Unit = {},
+    isPremium: Boolean = false,
     adsState: AdsState? = null,
 ) {
     val context = LocalContext.current
@@ -103,13 +104,14 @@ fun CricScoreHomeScreen(
     var pendingPredictionMatchId by remember { mutableStateOf<Int?>(null) }
 
     // Pre-load ads
-    LaunchedEffect(adsState) {
+    LaunchedEffect(adsState, isPremium) {
         adsState?.let { state ->
             if (state.inter_home.enabled) AdInterstitialManager.HomeScreenAdManager.loadAd(
                 context,
-                state.inter_home.ads_unit
+                state.inter_home.ads_unit,
+                isPremium
             )
-            if (state.reward_ai.enabled) AdRewardManager.loadAd(context, state.reward_ai.ads_unit)
+            if (state.reward_ai.enabled) AdRewardManager.loadAd(context, state.reward_ai.ads_unit, isPremium)
         }
     }
 
@@ -120,7 +122,8 @@ fun CricScoreHomeScreen(
             adsState?.inter_home?.let { config ->
                 if (config.enabled) AdInterstitialManager.HomeScreenAdManager.showAdIfAvailable(
                     activity,
-                    config.ads_unit
+                    config.ads_unit,
+                    isPremium
                 ) {}
             }
         }
@@ -136,7 +139,7 @@ fun CricScoreHomeScreen(
     // Helper to handle prediction clicks with ads
     val handlePredictionWithAds: (Int) -> Unit = { matchId ->
         val config = adsState?.reward_ai
-        if (config != null && config.enabled && activity != null) {
+        if (config != null && config.enabled && activity != null && !isPremium) {
             pendingPredictionMatchId = matchId
             showRewardPolicyDialog = true
         } else {
@@ -223,7 +226,7 @@ fun CricScoreHomeScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .statusBarsPadding(),
-                            contentPadding = PaddingValues(bottom = if (adsState?.sticky_banner_bottom?.enabled == true) 80.dp else 24.dp)
+                            contentPadding = PaddingValues(bottom = if (adsState?.sticky_banner_bottom?.enabled == true && !isPremium) 80.dp else 24.dp)
                         ) {
                             item { TopBar(onMenuClick = onMenuClick, onPurchaseClick = onPurchaseClick) }
 
@@ -255,8 +258,9 @@ fun CricScoreHomeScreen(
                                         ) { page ->
                                             when {
                                                 page == 3 || page == 6 -> {
-                                                    if (adsState?.slider_big_native?.enabled == true) NativeAdViewHorizontal(
-                                                        adUnitId = adsState.slider_big_native.ads_unit
+                                                    if (adsState?.slider_big_native?.enabled == true && !isPremium) NativeAdViewHorizontal(
+                                                        adUnitId = adsState.slider_big_native.ads_unit,
+                                                        isPremium = isPremium
                                                     )
                                                     else if (page == 3 && topFiveMatches.size > 3) FeaturedMatchCard(
                                                         fixture = topFiveMatches[3],
@@ -338,6 +342,7 @@ fun CricScoreHomeScreen(
 
                                             is MatchListItemType.Ad -> NativeAdViewHorizontal(
                                                 adUnitId = item.adConfig.ads_unit,
+                                                isPremium = isPremium,
                                                 modifier = Modifier.padding(
                                                     horizontal = 20.dp,
                                                     vertical = 8.dp
@@ -373,6 +378,7 @@ fun CricScoreHomeScreen(
 
                                         is MatchListItemType.Ad -> NativeAdViewHorizontal(
                                             adUnitId = item.adConfig.ads_unit,
+                                            isPremium = isPremium,
                                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                                         )
                                     }
@@ -394,6 +400,7 @@ fun CricScoreHomeScreen(
 
                                         is MatchListItemType.Ad -> NativeAdViewHorizontal(
                                             adUnitId = item.adConfig.ads_unit,
+                                            isPremium = isPremium,
                                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                                         )
                                     }
@@ -404,7 +411,7 @@ fun CricScoreHomeScreen(
                 }
             }
 
-            if (adsState?.sticky_banner_bottom?.enabled == true) {
+            if (adsState?.sticky_banner_bottom?.enabled == true && !isPremium) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -415,7 +422,7 @@ fun CricScoreHomeScreen(
                                 .calculateBottomPadding()
                         )
                 ) {
-                    BannerAdView(adUnitId = adsState.sticky_banner_bottom.ads_unit)
+                    BannerAdView(adUnitId = adsState.sticky_banner_bottom.ads_unit, isPremium = isPremium)
                 }
             }
 
@@ -429,6 +436,7 @@ fun CricScoreHomeScreen(
                                 if (activity != null) AdRewardManager.showAd(
                                     activity = activity,
                                     adUnitId = config.ads_unit,
+                                    isPremium = isPremium,
                                     onRewardEarned = {
                                         onPredictionClick(id)
                                         scope.launch { snackbarHostState.showSnackbar("AI Predictions Unlocked 🎯") }
@@ -469,14 +477,14 @@ fun TopBar(onMenuClick: () -> Unit, onPurchaseClick: () -> Unit = {}) {
         )
         // Hide purchase icon as of now
         Spacer(modifier = Modifier.size(28.dp))
-        /*Icon(
+        Icon(
             painter = painterResource(id = R.drawable.ic_purchase),
             contentDescription = "Purchase",
             modifier = Modifier
                 .size(28.dp)
                 .clickable { onPurchaseClick() },
             tint = Color.Unspecified
-        )*/
+        )
     }
 }
 

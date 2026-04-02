@@ -112,6 +112,7 @@ fun InternetConnectionDialog(
 fun ExitConfirmationDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    isPremium: Boolean = false,
     adConfig: AdConfig? = null
 ) {
     Dialog(
@@ -218,10 +219,11 @@ fun ExitConfirmationDialog(
                         }
                     }
 
-                    if (adConfig?.enabled == true && adConfig.ads_unit.isNotEmpty()) {
+                    if (adConfig?.enabled == true && adConfig.ads_unit.isNotEmpty() && !isPremium) {
                         Spacer(modifier = Modifier.height(8.dp))
                         BannerAdView(
                             adUnitId = adConfig.ads_unit,
+                            isPremium = isPremium,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 8.dp)

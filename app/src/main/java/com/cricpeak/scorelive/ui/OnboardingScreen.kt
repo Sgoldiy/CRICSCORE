@@ -41,7 +41,7 @@ data class OnboardingData(
 )
 
 @Composable
-fun OnboardingScreen(onFinish: () -> Unit, adsState: AdsState? = null) {
+fun OnboardingScreen(onFinish: () -> Unit, isPremium: Boolean = false, adsState: AdsState? = null) {
     val onboardingItems = listOf(
         OnboardingData(
             R.drawable.intro_1,
@@ -92,7 +92,7 @@ fun OnboardingScreen(onFinish: () -> Unit, adsState: AdsState? = null) {
                     .fillMaxWidth()
                     .weight(1f)
             ) { page ->
-                OnboardingPage(onboardingItems[page], page, adsState)
+                OnboardingPage(onboardingItems[page], page, isPremium, adsState)
             }
 
             // Bottom section
@@ -156,7 +156,7 @@ fun OnboardingScreen(onFinish: () -> Unit, adsState: AdsState? = null) {
 }
 
 @Composable
-fun OnboardingPage(data: OnboardingData, pageIndex: Int, adsState: AdsState? = null) {
+fun OnboardingPage(data: OnboardingData, pageIndex: Int, isPremium: Boolean = false, adsState: AdsState? = null) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -220,13 +220,13 @@ fun OnboardingPage(data: OnboardingData, pageIndex: Int, adsState: AdsState? = n
         ) {
             when (pageIndex) {
                 0 -> {
-                    if (adsState?.native_ob_1?.enabled == true && adsState.native_ob_1.ads_unit.isNotEmpty()) {
-                        NativeAdViewHorizontal(adUnitId = adsState.native_ob_1.ads_unit)
+                    if (adsState?.native_ob_1?.enabled == true && adsState.native_ob_1.ads_unit.isNotEmpty() && !isPremium) {
+                        NativeAdViewHorizontal(adUnitId = adsState.native_ob_1.ads_unit, isPremium = isPremium)
                     }
                 }
                 2 -> {
-                    if (adsState?.native_ob_3?.enabled == true && adsState.native_ob_3.ads_unit.isNotEmpty()) {
-                        NativeAdViewHorizontal(adUnitId = adsState.native_ob_3.ads_unit)
+                    if (adsState?.native_ob_3?.enabled == true && adsState.native_ob_3.ads_unit.isNotEmpty() && !isPremium) {
+                        NativeAdViewHorizontal(adUnitId = adsState.native_ob_3.ads_unit, isPremium = isPremium)
                     }
                 }
             }

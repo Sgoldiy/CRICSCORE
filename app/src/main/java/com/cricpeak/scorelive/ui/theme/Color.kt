@@ -9,6 +9,10 @@ val CardBackground = Color(0x66141510)
 val AccentGreen = Color(0xFF1DA132)
 val TextGray = Color(0xFF8E8E8E)
 
+val GoldPrimary = Color(0xFFFFD700)
+val GoldSecondary = Color(0xFFFFA500)
+val GoldBackground = Color(0xFF1A1A10)
+
 val Purple80 = Color(0xFFD0BCFF)
 val PurpleGrey80 = Color(0xFFCCC2DC)
 val Pink80 = Color(0xFFEFB8C8)

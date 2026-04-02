@@ -34,7 +34,9 @@ data class AdsState(
     val native_ob_3: AdConfig = AdConfig(),
     val reward_ai: AdConfig = AdConfig(),
     val reward_live: AdConfig = AdConfig(),
-    val isLoaded: Boolean = false
+    val isLoaded: Boolean = false,
+    val show_banner_ads: Boolean = true,
+    val show_interstitial_ads: Boolean = true
 )
 
 class AdsViewModel(application: Application) : AndroidViewModel(application) {
@@ -77,7 +79,7 @@ class AdsViewModel(application: Application) : AndroidViewModel(application) {
                         val rewardAi = snapshot.child("reward_ai").getValue(AdConfig::class.java) ?: AdConfig()
                         val rewardLive = snapshot.child("reward_live").getValue(AdConfig::class.java) ?: AdConfig()
 
-                        _adsState.value = AdsState(
+                        _adsState.value = _adsState.value.copy(
                             match_details_banner = matchDetails,
                             menu_banner = menu,
                             overs_banner = overs,

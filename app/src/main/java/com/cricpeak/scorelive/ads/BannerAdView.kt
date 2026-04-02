@@ -44,7 +44,9 @@ import com.google.android.gms.ads.nativead.NativeAdOptions
 import com.google.android.gms.ads.nativead.NativeAdView
 
 @Composable
-fun BannerAdView(adUnitId: String, modifier: Modifier = Modifier) {
+fun BannerAdView(adUnitId: String, isPremium: Boolean, modifier: Modifier = Modifier) {
+    if (isPremium) return
+
     var isAdLoaded by remember { mutableStateOf(false) }
     var isAdFailed by remember { mutableStateOf(false) }
 
@@ -123,7 +125,9 @@ fun ShimmerBanner() {
 }
 
 @Composable
-fun NativeAdViewHorizontal(adUnitId: String, modifier: Modifier = Modifier) {
+fun NativeAdViewHorizontal(adUnitId: String, isPremium: Boolean, modifier: Modifier = Modifier) {
+    if (isPremium) return
+
     val context = LocalContext.current
     var nativeAd by remember { mutableStateOf<NativeAd?>(null) }
     var isAdLoaded by remember { mutableStateOf(false) }

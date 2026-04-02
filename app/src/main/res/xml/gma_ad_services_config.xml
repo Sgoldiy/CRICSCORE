@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ad-services-config>
+    <topics-config sdk-name="com.google.android.gms:play-services-ads" />
+</ad-services-config>

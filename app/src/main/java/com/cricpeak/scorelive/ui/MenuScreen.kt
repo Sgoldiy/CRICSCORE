@@ -55,6 +55,7 @@ fun MenuScreen(
     onBack: () -> Unit, 
     onPrivacyPolicyClick: () -> Unit,
     onUninstallClick: () -> Unit,
+    isPremium: Boolean = false,
     adsState: AdsState? = null
 ) {
     val context = LocalContext.current
@@ -143,14 +144,14 @@ fun MenuScreen(
                     .padding(paddingValues)
                     .padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(top = 20.dp, bottom = if (adsState?.menu_banner?.enabled == true && adsState.menu_banner.ads_unit.isNotEmpty()) 16.dp else 40.dp)
+                contentPadding = PaddingValues(top = 20.dp, bottom = if (adsState?.menu_banner?.enabled == true && adsState.menu_banner.ads_unit.isNotEmpty() && !isPremium) 16.dp else 40.dp)
             ) {
                 items(menuItems) { item ->
                     MenuListItem(item)
                 }
                 
                 // 2. Menu Banner Ad - At the bottom of menu screen (above navigation bar)
-                if (adsState?.menu_banner?.enabled == true && adsState.menu_banner.ads_unit.isNotEmpty()) {
+                if (adsState?.menu_banner?.enabled == true && adsState.menu_banner.ads_unit.isNotEmpty() && !isPremium) {
                     item {
                         Box(
                             modifier = Modifier
@@ -158,7 +159,7 @@ fun MenuScreen(
                                 .padding(vertical = 8.dp)
                                 .padding(bottom = 32.dp) // Approximate navigation bar height to position above it
                         ) {
-                            BannerAdView(adUnitId = adsState.menu_banner.ads_unit)
+                            BannerAdView(adUnitId = adsState.menu_banner.ads_unit, isPremium = isPremium)
                         }
                     }
                 }

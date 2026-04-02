@@ -1,53 +1,108 @@
 package com.cricpeak.scorelive.ui
 
+import android.app.Activity
+import androidx.compose.foundation.Image
+import com.cricpeak.scorelive.R
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.cricpeak.scorelive.R
-import com.cricpeak.scorelive.ui.theme.*
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.cricpeak.scorelive.billing.BillingViewModel
 
 @Composable
-fun PurchaseScreen(onClose: () -> Unit) {
-    var isMonthly by remember { mutableStateOf(true) }
+fun PurchaseScreen(
+    onClose: () -> Unit,
+    billingViewModel: BillingViewModel = viewModel()
+) {
+    var selectedTabIndex by remember { mutableIntStateOf(2) }
 
-    // Golden gradient similar to homescreen but with gold tones
-    val radialGradient = Brush.radialGradient(
-        colors = listOf(Color(0xFFFFD700).copy(alpha = 0.25f), Color.Transparent),
-        center = androidx.compose.ui.geometry.Offset(540f, -50f),
+    val plans = listOf("1 Month", "6 Month", "1 Year", "Lifetime")
+    val productIds = listOf(
+        "monthly_sub",
+        "half_yearly_sub",
+        "yearly_sub",
+        "lifetime_access"
+    )
+    val goldGradient = Brush.radialGradient(
+        colors = listOf(
+            Color(0xFFFFD700).copy(alpha = 0.25f),
+            Color.Transparent
+        ),
+        center = Offset(600f, -100f),
         radius = 1200f
     )
+    val fallbackPrices = listOf("₹199", "₹399", "₹599", "₹2999")
+
+    val products by billingViewModel.products.collectAsState()
+    val isPremium by billingViewModel.isPremium.collectAsState()
+    val context = LocalContext.current
+
+    val selectedProduct = products.find {
+        it.productId == productIds[selectedTabIndex]
+    }
+
+    val displayPrice = selectedProduct?.let {
+        if (it.productId == "lifetime_access") {
+            it.oneTimePurchaseOfferDetails?.formattedPrice
+        } else {
+            it.subscriptionOfferDetails
+                ?.firstOrNull()
+                ?.pricingPhases
+                ?.pricingPhaseList
+                ?.firstOrNull()
+                ?.formattedPrice
+        }
+    } ?: fallbackPrices[selectedTabIndex]
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBackground)
+            .background(Color(0xFF0D0D0D))
     ) {
-        // Radial Background Glow
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(radialGradient)
+                .background(goldGradient)
         )
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -55,167 +110,163 @@ fun PurchaseScreen(onClose: () -> Unit) {
                 .padding(top = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header Section
+
+            // HEADER
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                    .padding(horizontal = 16.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Get Premium",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = GilroyFontFamily
-                    )
-                    Text(
-                        text = "Get Remove All Ads",
-                        color = TextGray,
-                        fontSize = 14.sp,
-                        fontFamily = GilroyFontFamily
-                    )
-                }
 
-                // Close Button
+                Text(
+                    text = "Get Premium",
+                    color = Color.White,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.1f))
+                    modifier = Modifier.align(Alignment.TopEnd)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Icon(Icons.Default.Close, contentDescription = null, tint = Color.White)
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Gold Man Image
-            Icon(
+            // IMAGE
+            Image(
                 painter = painterResource(id = R.drawable.ic_gold_man),
                 contentDescription = null,
                 modifier = Modifier
-                    .size(320.dp)
-                    .padding(horizontal = 24.dp),
-                tint = Color.Unspecified
+                    .size(220.dp)
+                    .padding(horizontal = 24.dp)
             )
 
-            // Remove All Ads Title
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // TITLE
             Text(
-                text = "Remove All Ads",
+                text = if (isPremium) "Premium Unlocked" else "Unlock Premium",
                 color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = GilroyFontFamily
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            Text(
-                text = "Go Remove All Ads, Score & Point Table\nAll Type Ads Removeos",
-                color = TextGray,
-                fontSize = 14.sp,
-                fontFamily = GilroyFontFamily,
-                textAlign = TextAlign.Center,
-                lineHeight = 20.sp
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Monthly / Yearly Toggle
+            // PLAN SELECTOR
             Row(
                 modifier = Modifier
-                    .width(200.dp)
-                    .height(44.dp)
-                    .background(Color(0xFF1A1A1A), RoundedCornerShape(22.dp))
-                    .padding(4.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .height(48.dp)
+                    .background(Color(0xFF1A1A1A), RoundedCornerShape(24.dp))
+                    .padding(4.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(if (isMonthly) Color(0xFF2E2A12) else Color.Transparent)
-                        .border(
-                            width = if (isMonthly) 1.dp else 0.dp,
-                            color = if (isMonthly) Color(0xFFFFD700).copy(alpha = 0.5f) else Color.Transparent,
-                            shape = RoundedCornerShape(20.dp)
+
+                plans.forEachIndexed { index, plan ->
+                    val isSelected = selectedTabIndex == index
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                if (isSelected) Color(0xFFFFD700).copy(alpha = 0.2f)
+                                else Color.Transparent
+                            )
+                            .clickable { selectedTabIndex = index },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = plan,
+                            color = if (isSelected) Color(0xFFFFD700) else Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
                         )
-                        .clickable { isMonthly = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Monthly",
-                        color = if (isMonthly) Color(0xFFFFD700) else Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = if (isMonthly) FontWeight.Bold else FontWeight.Medium,
-                        fontFamily = GilroyFontFamily
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(if (!isMonthly) Color(0xFF2E2A12) else Color.Transparent)
-                        .border(
-                            width = if (!isMonthly) 1.dp else 0.dp,
-                            color = if (!isMonthly) Color(0xFFFFD700).copy(alpha = 0.5f) else Color.Transparent,
-                            shape = RoundedCornerShape(20.dp)
-                        )
-                        .clickable { isMonthly = false },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Yearly",
-                        color = if (!isMonthly) Color(0xFFFFD700) else Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = if (!isMonthly) FontWeight.Bold else FontWeight.Medium,
-                        fontFamily = GilroyFontFamily
-                    )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
-            // Price Text
+            // FEATURES
+            Column(
+                modifier = Modifier.padding(horizontal = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                FeaturePoint("Ad-free experience")
+                FeaturePoint("AI-powered fantasy team suggestions")
+                FeaturePoint("Premium golden app theme")
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // PRICE
             Text(
-                text = if (isMonthly) "$99.00" else "$499.00",
+                text = displayPrice,
                 color = Color.White,
-                fontSize = 48.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = GilroyFontFamily
+                fontSize = 40.sp,
+                fontWeight = FontWeight.Bold
             )
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Go Premium Button
+            // BUTTON
             Button(
-                onClick = { /* Handle Purchase */ },
+                onClick = {
+                    if (selectedProduct != null) {
+                        billingViewModel.buyProduct(
+                            context as Activity,
+                            selectedProduct
+                        )
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
-                    .padding(horizontal = 48.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC317)),
+                    .padding(horizontal = 32.dp)
+                    .height(56.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFFC107)
+                ),
                 shape = RoundedCornerShape(28.dp)
             ) {
                 Text(
                     text = "Go Premium",
                     color = Color.Black,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = GilroyFontFamily
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            // PREMIUM STATE
+            if (isPremium) {
+                Text(
+                    text = "You already have Premium",
+                    color = Color(0xFFFFD700),
+                    fontSize = 16.sp
                 )
             }
         }
+    }
+}
+
+@Composable
+fun FeaturePoint(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = Icons.Default.CheckCircle,
+            contentDescription = null,
+            tint = Color(0xFFFFD700),
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(text = text, color = Color.White, fontSize = 14.sp)
     }
 }

@@ -16,7 +16,9 @@ class AdInterstitialManager(private val cooldownMs: Long = 30_000L) {
     private var isLoading = false
 
     // ✅ Load Ad
-    fun loadAd(context: Context, adUnitId: String) {
+    fun loadAd(context: Context, adUnitId: String, isPremium: Boolean) {
+        if (isPremium) return // Added premium check
+
         if (adUnitId.isEmpty()) return
         if (interstitialAd != null || isLoading) return
 
@@ -46,13 +48,13 @@ class AdInterstitialManager(private val cooldownMs: Long = 30_000L) {
                             override fun onAdDismissedFullScreenContent() {
                                 Log.d(TAG, "Ad Dismissed")
                                 interstitialAd = null
-                                loadAd(context, adUnitId) // preload next
+                                loadAd(context, adUnitId, isPremium) // preload next, pass isPremium
                             }
 
                             override fun onAdFailedToShowFullScreenContent(adError: AdError) {
                                 Log.d(TAG, "Ad Failed: ${adError.message}")
                                 interstitialAd = null
-                                loadAd(context, adUnitId)
+                                loadAd(context, adUnitId, isPremium) // pass isPremium
                             }
                         }
                 }
@@ -72,7 +74,11 @@ class AdInterstitialManager(private val cooldownMs: Long = 30_000L) {
     }
 
     // ✅ Show Ad
-    fun showAdIfAvailable(activity: Activity, adUnitId: String, onContinue: () -> Unit) {
+    fun showAdIfAvailable(activity: Activity, adUnitId: String, isPremium: Boolean, onContinue: () -> Unit) { // Added isPremium parameter
+        if (isPremium) { // Added premium check
+            onContinue()
+            return
+        }
 
         if (!canShowAd()) {
             Log.d(TAG, "Cooldown Active → Skip Ad")
@@ -87,7 +93,7 @@ class AdInterstitialManager(private val cooldownMs: Long = 30_000L) {
             ad.show(activity)
         } else {
             Log.d(TAG, "Ad Not Ready → Continue")
-            loadAd(activity, adUnitId)
+            loadAd(activity, adUnitId, isPremium) // Pass isPremium
             onContinue()
         }
     }

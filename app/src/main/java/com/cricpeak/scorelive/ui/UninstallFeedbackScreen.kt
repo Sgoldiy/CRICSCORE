@@ -49,7 +49,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UninstallFeedbackScreen(onBack: () -> Unit, adsState: AdsState? = null) {
+fun UninstallFeedbackScreen(onBack: () -> Unit, isPremium: Boolean = false, adsState: AdsState? = null) {
     val context = LocalContext.current
     var selectedReason by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
@@ -155,14 +155,14 @@ fun UninstallFeedbackScreen(onBack: () -> Unit, adsState: AdsState? = null) {
                 Spacer(modifier = Modifier.height(24.dp))
 
                 // Uninstall Banner Ad - At the bottom (above navigation bar)
-                if (adsState?.uninstall_banner?.enabled == true && adsState.uninstall_banner.ads_unit.isNotEmpty()) {
+                if (adsState?.uninstall_banner?.enabled == true && adsState.uninstall_banner.ads_unit.isNotEmpty() && !isPremium) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 16.dp)
                             .padding(bottom = 32.dp) // Approximate navigation bar height to position above it
                     ) {
-                        BannerAdView(adUnitId = adsState.uninstall_banner.ads_unit)
+                        BannerAdView(adUnitId = adsState.uninstall_banner.ads_unit, isPremium = isPremium)
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                 }

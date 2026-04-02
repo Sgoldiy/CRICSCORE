@@ -3,6 +3,7 @@ package com.cricpeak.scorelive
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
@@ -39,7 +40,9 @@ import com.cricpeak.scorelive.ui.components.InternetConnectionDialog
 import com.cricpeak.scorelive.util.NetworkUtils
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cricpeak.scorelive.ads.AdsViewModel
+import com.cricpeak.scorelive.billing.BillingViewModel
 import com.google.android.gms.ads.MobileAds
+import com.izooto.iZooto
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,14 +50,24 @@ class MainActivity : ComponentActivity() {
         
         // Initialize Mobile Ads SDK
         MobileAds.initialize(this) {}
+        iZooto.initialize(this)
+            .setTokenReceivedListener { token ->
+                Log.d("iZooto", "Token: $token")
+            }
+            .build()
 
+        iZooto.promptForPushNotifications()
+        iZooto.setSubscription(true)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb()),
             navigationBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb())
         )
         setContent {
-            CRICPEAKTheme {
-                AppNavigation(activity = this)
+            val billingViewModel: BillingViewModel = viewModel()
+            val isPremium by billingViewModel.isPremium.collectAsState()
+            
+            CRICPEAKTheme(isPremium = isPremium) {
+                AppNavigation(activity = this, billingViewModel = billingViewModel)
             }
         }
     }
@@ -63,7 +76,7 @@ class MainActivity : ComponentActivity() {
 
 @SuppressLint("RememberReturnType")
 @Composable
-fun AppNavigation(activity: MainActivity? = null) {
+fun AppNavigation(activity: MainActivity? = null, billingViewModel: BillingViewModel = viewModel()) {
     val navController = rememberNavController()
     val context = LocalContext.current
     val sharedPref = remember { context.getSharedPreferences("cricscore_prefs", Context.MODE_PRIVATE) }
@@ -86,6 +99,7 @@ fun AppNavigation(activity: MainActivity? = null) {
     
     // Collect ads state
     val adsState by adsViewModel.adsState.collectAsState()
+    val isPremium by billingViewModel.isPremium.collectAsState()
 
     // Check internet connectivity
     remember {
@@ -122,6 +136,7 @@ fun AppNavigation(activity: MainActivity? = null) {
             onDismiss = {
                 showExitDialog = false
             },
+            isPremium = isPremium,
             adConfig = adsState.exit_banner
         )
     }
@@ -153,6 +168,7 @@ fun AppNavigation(activity: MainActivity? = null) {
                         popUpTo("onboarding") { inclusive = true }
                     }
                 },
+                isPremium = isPremium,
                 adsState = adsState
             )
         }
@@ -173,7 +189,8 @@ fun AppNavigation(activity: MainActivity? = null) {
                 onPurchaseClick = {
                     navController.navigate("purchase")
                 },
-                adsState = adsState
+                isPremium = isPremium,
+                adsState = if (isPremium) adsState.copy(show_banner_ads = false, show_interstitial_ads = false) else adsState
             )
         }
         
@@ -186,18 +203,23 @@ fun AppNavigation(activity: MainActivity? = null) {
                 },
                 onPrivacyPolicyClick = { navController.navigate("privacy_policy") },
                 onUninstallClick = { navController.navigate("uninstall_feedback") },
-                adsState = adsState
+                isPremium = isPremium,
+                adsState = if (isPremium) adsState.copy(show_banner_ads = false, show_interstitial_ads = false) else adsState
             )
         }
 
         composable("purchase") {
-            PurchaseScreen(onClose = { navController.popBackStack() })
+            PurchaseScreen(
+                onClose = { navController.popBackStack() },
+                billingViewModel = billingViewModel
+            )
         }
 
         composable("uninstall_feedback") {
             UninstallFeedbackScreen(
                 onBack = { navController.popBackStack() },
-                adsState = adsState
+                isPremium = isPremium,
+                adsState = if (isPremium) adsState.copy(show_banner_ads = false, show_interstitial_ads = false) else adsState
             )
         }
 
@@ -212,7 +234,9 @@ fun AppNavigation(activity: MainActivity? = null) {
             val matchId = backStackEntry.arguments?.getInt("matchId") ?: 0
             MatchDetailsScreen(
                 matchId = matchId,
-                onBackClick = { navController.popBackStack() }
+                isPremium = isPremium,
+                onBackClick = { navController.popBackStack() },
+                onPurchaseClick = { navController.navigate("purchase") }
             )
         }
 

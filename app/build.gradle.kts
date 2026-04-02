@@ -39,6 +39,10 @@ android {
     buildFeatures {
         compose = true
     }
+    defaultConfig {
+        manifestPlaceholders["izooto_app_id"] =
+            "3b86c08efa9c30f2722903ab7cdf5be1ccf97039"
+    }
 }
 
 kotlin {
@@ -68,7 +72,6 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-
     // API call
     implementation(libs.retrofit)
     implementation(libs.converter.gson)
@@ -95,4 +98,13 @@ dependencies {
     // Google Play Billing (IAP)
     implementation(libs.play.billing)
     implementation(libs.play.billing.ktx)
+
+    //notification
+    implementation(libs.firebase.messaging)
+    implementation(libs.firebase.analytics)
+    implementation(libs.android.sdk)
+    implementation(libs.androidx.work.runtime)
+
+    // DataStore
+    implementation(libs.androidx.datastore.preferences)
 }

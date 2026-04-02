@@ -58,7 +58,7 @@ import com.cricpeak.scorelive.ui.theme.TextGray
 import java.util.Locale
 
 @Composable
-fun ScorecardScreen(inningsList: List<InningsData>, onPlayerClick: (PlayerProfileData) -> Unit = {}, adsState: AdsState? = null, gameType: String = "") {
+fun ScorecardScreen(inningsList: List<InningsData>, onPlayerClick: (PlayerProfileData) -> Unit = {}, isPremium: Boolean = false, adsState: AdsState? = null, gameType: String = "") {
     if (inningsList.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
             Text(
@@ -114,7 +114,7 @@ fun ScorecardScreen(inningsList: List<InningsData>, onPlayerClick: (PlayerProfil
             },
             label = "ScorecardTabTransition"
         ) { targetTabIndex ->
-            InningsScorecard(inningsList[targetTabIndex], onPlayerClick, adsState)
+            InningsScorecard(inningsList[targetTabIndex], onPlayerClick, isPremium, adsState)
         }
     }
 }
@@ -163,7 +163,7 @@ fun InningsTabs(inningsList: List<InningsData>, selectedIndex: Int, gameType: St
 }
 
 @Composable
-fun InningsScorecard(innings: InningsData, onPlayerClick: (PlayerProfileData) -> Unit = {}, adsState: AdsState? = null) {
+fun InningsScorecard(innings: InningsData, onPlayerClick: (PlayerProfileData) -> Unit = {}, isPremium: Boolean = false, adsState: AdsState? = null) {
     Column(modifier = Modifier.fillMaxWidth()) {
         // Batting Section
         BattingSection(innings, onPlayerClick)
@@ -171,13 +171,13 @@ fun InningsScorecard(innings: InningsData, onPlayerClick: (PlayerProfileData) ->
         Spacer(modifier = Modifier.height(24.dp))
         
         // 4. Scorecard Banner Ad - Between batting and bowling sections
-        if (adsState?.scorecard_banner?.enabled == true && adsState.scorecard_banner.ads_unit.isNotEmpty()) {
+        if (adsState?.scorecard_banner?.enabled == true && adsState.scorecard_banner.ads_unit.isNotEmpty() && !isPremium) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 16.dp)
             ) {
-                BannerAdView(adUnitId = adsState.scorecard_banner.ads_unit)
+                BannerAdView(adUnitId = adsState.scorecard_banner.ads_unit, isPremium = isPremium)
             }
             Spacer(modifier = Modifier.height(16.dp))
         }
