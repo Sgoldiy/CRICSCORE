@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.cricpeak.scorelive.R
+import com.cricpeak.scorelive.ui.theme.GoldPrimary
 
 data class PlayerProfileData(
     val id: Int,
@@ -41,9 +42,20 @@ data class PlayerProfileData(
 @Composable
 fun PlayerProfileScreen(
     player: PlayerProfileData,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    isPremium: Boolean = false
 ) {
     val scrollState = rememberScrollState()
+    
+    val tealGradient = listOf(
+        Color(0xFF0D2526),
+        Color(0xFF0F1115)
+    )
+    
+    val goldGradient = listOf(
+        Color(0xFF2A2A1A),
+        Color(0xFF0F1115)
+    )
     
     Column(
         modifier = Modifier
@@ -58,10 +70,7 @@ fun PlayerProfileScreen(
                 .height(420.dp)
                 .background(
                     brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF0D2526),
-                            Color(0xFF0F1115)
-                        )
+                        colors = if (isPremium) goldGradient else tealGradient
                     )
                 )
         ) {
@@ -252,7 +261,7 @@ fun PlayerStatItem(label: String, value: String) {
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = if (value.isNullOrEmpty() || value == "null") "N/A" else value,
-            color = Color.White, 
+            color = Color.White,
             fontSize = 17.sp, 
             fontWeight = FontWeight.Bold, 
             fontFamily = GilroyFontFamily

@@ -5,19 +5,54 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -33,15 +68,30 @@ import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.cricpeak.scorelive.R
-import com.cricpeak.scorelive.ads.*
+import com.cricpeak.scorelive.ads.AdConfig
+import com.cricpeak.scorelive.ads.AdInterstitialManager
+import com.cricpeak.scorelive.ads.AdRewardManager
+import com.cricpeak.scorelive.ads.AdsState
+import com.cricpeak.scorelive.ads.BannerAdView
+import com.cricpeak.scorelive.ads.NativeAdViewHorizontal
+import com.cricpeak.scorelive.ads.RewardPrefs
 import com.cricpeak.scorelive.ui.apicallfiles.CricketViewModel
 import com.cricpeak.scorelive.ui.apicallfiles.FixtureContainer
 import com.cricpeak.scorelive.ui.apicallfiles.FixturesState
 import com.cricpeak.scorelive.ui.components.RewardPolicyDialog
-import com.cricpeak.scorelive.ui.theme.*
+import com.cricpeak.scorelive.ui.theme.AccentGreen
+import com.cricpeak.scorelive.ui.theme.BayonFont
+import com.cricpeak.scorelive.ui.theme.CardBackground
+import com.cricpeak.scorelive.ui.theme.DarkBackground
+import com.cricpeak.scorelive.ui.theme.GilroyFontFamily
+import com.cricpeak.scorelive.ui.theme.GoldPrimary
+import com.cricpeak.scorelive.ui.theme.RadialGold
+import com.cricpeak.scorelive.ui.theme.RadialTeal
+import com.cricpeak.scorelive.ui.theme.TextGray
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Locale
+import java.util.TimeZone
 
 fun formatMatchDate(dateTime: String): String {
     return try {
@@ -111,7 +161,11 @@ fun CricScoreHomeScreen(
                 state.inter_home.ads_unit,
                 isPremium
             )
-            if (state.reward_ai.enabled) AdRewardManager.loadAd(context, state.reward_ai.ads_unit, isPremium)
+            if (state.reward_ai.enabled) AdRewardManager.loadAd(
+                context,
+                state.reward_ai.ads_unit,
+                isPremium
+            )
         }
     }
 
@@ -132,7 +186,16 @@ fun CricScoreHomeScreen(
 
     val radialGradient = Brush.radialGradient(
         colors = listOf(RadialTeal.copy(alpha = 0.5f), Color.Transparent),
-        center = androidx.compose.ui.geometry.Offset(540f, -50f),
+        center = Offset(540f, -50f),
+        radius = 1000f
+    )
+
+    val goldGradient = Brush.radialGradient(
+        colors = listOf(
+            RadialGold.copy(alpha = 0.25f),
+            Color.Transparent
+        ),
+        center = Offset(540f, -50f),
         radius = 1000f
     )
 
@@ -160,14 +223,14 @@ fun CricScoreHomeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(350.dp)
-                    .background(radialGradient)
+                    .background(if (isPremium) goldGradient else radialGradient)
             )
 
             when (val state = fixturesState) {
                 is FixturesState.Loading -> Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
-                ) { CircularProgressIndicator(color = AccentGreen) }
+                ) { CircularProgressIndicator(color = if (isPremium) GoldPrimary else AccentGreen) }
 
                 is FixturesState.Error -> Box(
                     modifier = Modifier.fillMaxSize(),
@@ -178,7 +241,7 @@ fun CricScoreHomeScreen(
                         Text(text = "Error: $message", color = Color.Red)
                         Button(
                             onClick = { viewModel.fetchFixtures() },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isPremium) GoldPrimary else AccentGreen)
                         ) { Text(text = "Retry") }
                     }
                 }
@@ -194,23 +257,35 @@ fun CricScoreHomeScreen(
                     // Background Preloading: Data & Images for butter-smooth UI transitions
                     LaunchedEffect(fixtures) {
                         launch(kotlinx.coroutines.Dispatchers.IO) {
-                            val repo = com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsRepository.getInstance()
+                            val repo =
+                                com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsRepository.getInstance()
                             val imgLoader = context.imageLoader
                             // We aggressively target only the top 10 matches (live first, then featured) to protect bandwidth
-                            val toPreload = (fixtures.inProgressFixtures + topFiveMatches).distinctBy { it.id }.take(10)
+                            val toPreload =
+                                (fixtures.inProgressFixtures + topFiveMatches).distinctBy { it.id }
+                                    .take(10)
 
                             toPreload.forEach { match ->
                                 // 1. Preload API Match Scorecard & Comments Data (0ms latency later)
                                 repo.preloadMatchData(match.id)
 
                                 // 2. Preload Team Logos into Memory
-                                imgLoader.enqueue(ImageRequest.Builder(context).data(match.homeTeam.logoUrl).build())
-                                imgLoader.enqueue(ImageRequest.Builder(context).data(match.awayTeam.logoUrl).build())
+                                imgLoader.enqueue(
+                                    ImageRequest.Builder(context).data(match.homeTeam.logoUrl)
+                                        .build()
+                                )
+                                imgLoader.enqueue(
+                                    ImageRequest.Builder(context).data(match.awayTeam.logoUrl)
+                                        .build()
+                                )
 
                                 // 3. Preload detailed Player Headshots from the cached scorecard
                                 repo.getCachedScorecard(match.id)?.players?.forEach { player ->
                                     if (!player.imageUrl.isNullOrEmpty()) {
-                                        imgLoader.enqueue(ImageRequest.Builder(context).data(player.imageUrl).build())
+                                        imgLoader.enqueue(
+                                            ImageRequest.Builder(context).data(player.imageUrl)
+                                                .build()
+                                        )
                                     }
                                 }
                             }
@@ -228,7 +303,12 @@ fun CricScoreHomeScreen(
                                 .statusBarsPadding(),
                             contentPadding = PaddingValues(bottom = if (adsState?.sticky_banner_bottom?.enabled == true && !isPremium) 80.dp else 24.dp)
                         ) {
-                            item { TopBar(onMenuClick = onMenuClick, onPurchaseClick = onPurchaseClick) }
+                            item {
+                                TopBar(
+                                    onMenuClick = onMenuClick,
+                                    onPurchaseClick = onPurchaseClick
+                                )
+                            }
 
                             // Featured Section
                             if (topFiveMatches.isNotEmpty()) {
@@ -245,7 +325,11 @@ fun CricScoreHomeScreen(
                                             bottom = 12.dp
                                         )
                                     )
-                                    val totalItems = 7
+                                    val totalItems = if (isPremium) {
+                                        topFiveMatches.size
+                                    } else {
+                                        7
+                                    }
                                     val pagerState = rememberPagerState(pageCount = { totalItems })
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         HorizontalPager(
@@ -257,7 +341,7 @@ fun CricScoreHomeScreen(
                                             pageSpacing = 16.dp
                                         ) { page ->
                                             when {
-                                                page == 3 || page == 6 -> {
+                                                !isPremium && (page == 3 || page == 6) -> {
                                                     if (adsState?.slider_big_native?.enabled == true && !isPremium) NativeAdViewHorizontal(
                                                         adUnitId = adsState.slider_big_native.ads_unit,
                                                         isPremium = isPremium
@@ -266,7 +350,8 @@ fun CricScoreHomeScreen(
                                                         fixture = topFiveMatches[3],
                                                         onMatchClick = onMatchClick,
                                                         onPredictionClick = handlePredictionWithAds,
-                                                        showPrediction = false
+                                                        showPrediction = false,
+                                                        isPremium = isPremium
                                                     )
                                                 }
 
@@ -276,7 +361,8 @@ fun CricScoreHomeScreen(
                                                         fixture = topFiveMatches[idx],
                                                         onMatchClick = onMatchClick,
                                                         onPredictionClick = handlePredictionWithAds,
-                                                        showPrediction = false
+                                                        showPrediction = false,
+                                                        isPremium = isPremium
                                                     )
                                                 }
                                             }
@@ -309,7 +395,8 @@ fun CricScoreHomeScreen(
                                 CategoryTabs(
                                     categories = categories,
                                     selectedIndex = selectedTabIndex,
-                                    onTabSelected = onTabSelected
+                                    onTabSelected = onTabSelected,
+                                    isPremium = isPremium
                                 )
                             }
 
@@ -338,7 +425,9 @@ fun CricScoreHomeScreen(
                                             is MatchListItemType.Match -> MatchListItem(
                                                 fixture = item.fixture,
                                                 onMatchClick = onMatchClick,
-                                                onPredictionClick = handlePredictionWithAds)
+                                                onPredictionClick = handlePredictionWithAds,
+                                                isPremium = isPremium
+                                            )
 
                                             is MatchListItemType.Ad -> NativeAdViewHorizontal(
                                                 adUnitId = item.adConfig.ads_unit,
@@ -374,12 +463,17 @@ fun CricScoreHomeScreen(
                                         is MatchListItemType.Match -> MatchListItem(
                                             fixture = item.fixture,
                                             onMatchClick = onMatchClick,
-                                            onPredictionClick = handlePredictionWithAds)
+                                            onPredictionClick = handlePredictionWithAds,
+                                            isPremium = isPremium
+                                        )
 
                                         is MatchListItemType.Ad -> NativeAdViewHorizontal(
                                             adUnitId = item.adConfig.ads_unit,
                                             isPremium = isPremium,
-                                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                                            modifier = Modifier.padding(
+                                                horizontal = 20.dp,
+                                                vertical = 8.dp
+                                            )
                                         )
                                     }
                                 }
@@ -395,13 +489,17 @@ fun CricScoreHomeScreen(
                                             fixture = item.fixture,
                                             onMatchClick = onMatchClick,
                                             onPredictionClick = handlePredictionWithAds,
-                                            showPrediction = false
+                                            showPrediction = false,
+                                            isPremium = isPremium
                                         )
 
                                         is MatchListItemType.Ad -> NativeAdViewHorizontal(
                                             adUnitId = item.adConfig.ads_unit,
                                             isPremium = isPremium,
-                                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                                            modifier = Modifier.padding(
+                                                horizontal = 20.dp,
+                                                vertical = 8.dp
+                                            )
                                         )
                                     }
                                 }
@@ -422,7 +520,10 @@ fun CricScoreHomeScreen(
                                 .calculateBottomPadding()
                         )
                 ) {
-                    BannerAdView(adUnitId = adsState.sticky_banner_bottom.ads_unit, isPremium = isPremium)
+                    BannerAdView(
+                        adUnitId = adsState.sticky_banner_bottom.ads_unit,
+                        isPremium = isPremium
+                    )
                 }
             }
 
@@ -439,7 +540,7 @@ fun CricScoreHomeScreen(
                                     isPremium = isPremium,
                                     onRewardEarned = {
                                         onPredictionClick(id)
-                                        scope.launch { snackbarHostState.showSnackbar("AI Predictions Unlocked 🎯") }
+                                        scope.launch { snackbarHostState.showSnackbar("AI Predictions Unlocked \ud83c\udfaf") }
                                     })
                             }
                         }
@@ -453,18 +554,17 @@ fun CricScoreHomeScreen(
 
 @Composable
 fun TopBar(onMenuClick: () -> Unit, onPurchaseClick: () -> Unit = {}) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 0.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             painter = painterResource(id = R.drawable.ic_menu),
             contentDescription = "Menu",
             modifier = Modifier
                 .size(24.dp)
+                .align(Alignment.CenterStart)
                 .clickable { onMenuClick() },
             tint = Color.White
         )
@@ -473,15 +573,15 @@ fun TopBar(onMenuClick: () -> Unit, onPurchaseClick: () -> Unit = {}) {
             color = Color.White,
             fontSize = 36.sp,
             fontFamily = BayonFont,
-            letterSpacing = (36 * 0.07).sp
+            letterSpacing = (36 * 0.07).sp,
+            modifier = Modifier.align(Alignment.Center)
         )
-        // Hide purchase icon as of now
-        Spacer(modifier = Modifier.size(28.dp))
         Icon(
             painter = painterResource(id = R.drawable.ic_purchase),
             contentDescription = "Purchase",
             modifier = Modifier
                 .size(28.dp)
+                .align(Alignment.CenterEnd)
                 .clickable { onPurchaseClick() },
             tint = Color.Unspecified
         )
@@ -494,8 +594,10 @@ fun FeaturedMatchCard(
     onMatchClick: (Int) -> Unit,
     onPredictionClick: (Int) -> Unit,
     showPrediction: Boolean = true,
+    isPremium: Boolean = false,
 ) {
     val isUpcoming = !fixture.isLive && !fixture.isInProgress && !fixture.isCompleted
+    val accentColor = if (isPremium) GoldPrimary else AccentGreen
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -525,7 +627,7 @@ fun FeaturedMatchCard(
                         Surface(
                             color = Color.Transparent,
                             shape = RoundedCornerShape(30.dp),
-                            border = BorderStroke(0.5.dp, AccentGreen)
+                            border = BorderStroke(0.5.dp, accentColor)
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp),
@@ -535,12 +637,12 @@ fun FeaturedMatchCard(
                                     modifier = Modifier
                                         .size(6.dp)
                                         .clip(CircleShape)
-                                        .background(AccentGreen)
+                                        .background(accentColor)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "LIVE",
-                                    color = AccentGreen,
+                                    color = accentColor,
                                     fontSize = 12.sp,
                                     fontFamily = GilroyFontFamily,
                                     fontWeight = FontWeight.Bold
@@ -550,7 +652,7 @@ fun FeaturedMatchCard(
                     } else {
                         Text(
                             text = if (isUpcoming) "UPCOMING" else fixture.gameType,
-                            color = AccentGreen,
+                            color = accentColor,
                             fontSize = 12.sp,
                             fontFamily = GilroyFontFamily,
                             fontWeight = FontWeight.Bold
@@ -568,7 +670,8 @@ fun FeaturedMatchCard(
                         name = fixture.homeTeam.shortName,
                         score = if (isUpcoming) "-" else (hIn?.let { "${it.runsScored}/${it.wickets}" }
                             ?: "0/0"),
-                        overs = if (isUpcoming) "" else (hIn?.let { "(${it.oversBowled})" } ?: "(0)"),
+                        overs = if (isUpcoming) "" else (hIn?.let { "(${it.oversBowled})" }
+                            ?: "(0)"),
                         logoUrl = fixture.homeTeam.logoUrl,
                         modifier = Modifier.weight(1f)
                     )
@@ -591,7 +694,8 @@ fun FeaturedMatchCard(
                         name = fixture.awayTeam.shortName,
                         score = if (isUpcoming) "-" else (aIn?.let { "${it.runsScored}/${it.wickets}" }
                             ?: "0/0"),
-                        overs = if (isUpcoming) "" else (aIn?.let { "(${it.oversBowled})" } ?: "(0)"),
+                        overs = if (isUpcoming) "" else (aIn?.let { "(${it.oversBowled})" }
+                            ?: "(0)"),
                         logoUrl = fixture.awayTeam.logoUrl,
                         modifier = Modifier.weight(1f),
                         isRight = true
@@ -599,19 +703,25 @@ fun FeaturedMatchCard(
                 }
                 if (isUpcoming && showPrediction) {
                     Spacer(modifier = Modifier.height(16.dp))
+                    val aiColor = if (isPremium) GoldPrimary else Color(0xFF00BFA5)
                     Button(
                         onClick = { onPredictionClick(fixture.id) },
                         modifier = Modifier
                             .height(36.dp)
-                            .padding(horizontal = 24.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00BFA5)),
+                            .padding(horizontal = 24.dp)
+                            .border(1.dp, aiColor, RoundedCornerShape(18.dp)),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isPremium) aiColor.copy(
+                                alpha = 0.1f
+                            ) else Color(0xFF00BFA5)
+                        ),
                         shape = RoundedCornerShape(18.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "AI Prediction",
-                                color = Color.Black,
+                                color = if (isPremium) aiColor else Color.Black,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = GilroyFontFamily
@@ -627,7 +737,8 @@ fun FeaturedMatchCard(
                 color = Color(0xFF2C2C2E),
                 shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
             ) {
-                val footerText = fixture.resultText ?: (if (isUpcoming) "Match starting soon" else "")
+                val footerText =
+                    fixture.resultText ?: (if (isUpcoming) "Match starting soon" else "")
                 Text(
                     text = footerText,
                     color = Color.White.copy(alpha = 0.9f),
@@ -714,7 +825,13 @@ fun TeamLogo(url: String) {
 }
 
 @Composable
-fun CategoryTabs(categories: List<String>, selectedIndex: Int, onTabSelected: (Int) -> Unit) {
+fun CategoryTabs(
+    categories: List<String>,
+    selectedIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    isPremium: Boolean = false,
+) {
+    val accentColor = if (isPremium) GoldPrimary else AccentGreen
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -730,7 +847,7 @@ fun CategoryTabs(categories: List<String>, selectedIndex: Int, onTabSelected: (I
                     .background(if (isSelected) Color.Black.copy(alpha = 0.4f) else Color.Transparent)
                     .border(
                         1.dp,
-                        if (isSelected) AccentGreen else Color.Transparent,
+                        if (isSelected) accentColor else Color.Transparent,
                         RoundedCornerShape(24.dp)
                     )
                     .clickable { onTabSelected(i) }
@@ -755,8 +872,10 @@ fun MatchListItem(
     onMatchClick: (Int) -> Unit,
     onPredictionClick: (Int) -> Unit,
     showPrediction: Boolean = true,
+    isPremium: Boolean = false,
 ) {
     val isUpcoming = !fixture.isLive && !fixture.isInProgress && !fixture.isCompleted
+    val accentColor = if (isPremium) GoldPrimary else AccentGreen
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -768,7 +887,10 @@ fun MatchListItem(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Text(
                         text = fixture.competition.name,
                         color = TextGray,
@@ -780,7 +902,7 @@ fun MatchListItem(
                     )
                     if (isUpcoming) Text(
                         text = formatMatchDate(fixture.startDateTime),
-                        color = AccentGreen,
+                        color = accentColor,
                         fontSize = 12.sp,
                         fontFamily = GilroyFontFamily,
                         fontWeight = FontWeight.Bold
@@ -804,13 +926,14 @@ fun MatchListItem(
                     logoUrl = fixture.awayTeam.logoUrl)
                 if (isUpcoming && showPrediction) {
                     Spacer(modifier = Modifier.height(10.dp))
+                    val aiColor = if (isPremium) GoldPrimary else Color(0xFF00BFA5)
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Surface(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(14.dp))
                                 .clickable { onPredictionClick(fixture.id) }
-                                .border(1.dp, Color(0xFF00BFA5), RoundedCornerShape(14.dp)),
-                            color = Color(0xFF00BFA5).copy(alpha = 0.1f)
+                                .border(1.dp, aiColor, RoundedCornerShape(14.dp)),
+                            color = aiColor.copy(alpha = 0.1f)
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -818,7 +941,7 @@ fun MatchListItem(
                             ) {
                                 Text(
                                     text = "AI Prediction",
-                                    color = Color(0xFF00BFA5),
+                                    color = aiColor,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = GilroyFontFamily

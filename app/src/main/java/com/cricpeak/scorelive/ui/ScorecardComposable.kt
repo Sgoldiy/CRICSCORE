@@ -54,6 +54,7 @@ import com.cricpeak.scorelive.ui.apicallfiles.BowlerStats
 import com.cricpeak.scorelive.ui.apicallfiles.InningsData
 import com.cricpeak.scorelive.ui.theme.CardBackground
 import com.cricpeak.scorelive.ui.theme.GilroyFontFamily
+import com.cricpeak.scorelive.ui.theme.GoldPrimary
 import com.cricpeak.scorelive.ui.theme.TextGray
 import java.util.Locale
 
@@ -96,7 +97,7 @@ fun ScorecardScreen(inningsList: List<InningsData>, onPlayerClick: (PlayerProfil
             }
     ) {
         // Innings Tabs
-        InningsTabs(inningsList, selectedInningsTab, gameType) { selectedInningsTab = it }
+        InningsTabs(inningsList, selectedInningsTab, gameType, isPremium = isPremium) { selectedInningsTab = it }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -120,7 +121,7 @@ fun ScorecardScreen(inningsList: List<InningsData>, onPlayerClick: (PlayerProfil
 }
 
 @Composable
-fun InningsTabs(inningsList: List<InningsData>, selectedIndex: Int, gameType: String = "", onTabSelected: (Int) -> Unit) {
+fun InningsTabs(inningsList: List<InningsData>, selectedIndex: Int, gameType: String = "", isPremium: Boolean = false, onTabSelected: (Int) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
@@ -134,8 +135,13 @@ fun InningsTabs(inningsList: List<InningsData>, selectedIndex: Int, gameType: St
                     .weight(1f)
                     .clickable { onTabSelected(index) },
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isSelected) Color(0xFF00BFA5) else CardBackground
+                    containerColor = if (isSelected) {
+                        if (isPremium) Color.Black else Color(0xFF00BFA5)
+                    } else {
+                        CardBackground
+                    }
                 ),
+                border = if (isPremium && isSelected) BorderStroke(1.5.dp, GoldPrimary) else null,
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(
@@ -150,7 +156,7 @@ fun InningsTabs(inningsList: List<InningsData>, selectedIndex: Int, gameType: St
                     }
                     Text(
                         text = displayLabel,
-                        color = if (isSelected) Color.Black else Color.White,
+                        color = if (isSelected) Color.White else Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                         fontFamily = GilroyFontFamily,
@@ -166,7 +172,7 @@ fun InningsTabs(inningsList: List<InningsData>, selectedIndex: Int, gameType: St
 fun InningsScorecard(innings: InningsData, onPlayerClick: (PlayerProfileData) -> Unit = {}, isPremium: Boolean = false, adsState: AdsState? = null) {
     Column(modifier = Modifier.fillMaxWidth()) {
         // Batting Section
-        BattingSection(innings, onPlayerClick)
+        BattingSection(innings, onPlayerClick, isPremium)
         
         Spacer(modifier = Modifier.height(24.dp))
         
@@ -188,7 +194,7 @@ fun InningsScorecard(innings: InningsData, onPlayerClick: (PlayerProfileData) ->
 }
 
 @Composable
-fun BattingSection(innings: InningsData, onPlayerClick: (PlayerProfileData) -> Unit = {}) {
+fun BattingSection(innings: InningsData, onPlayerClick: (PlayerProfileData) -> Unit = {}, isPremium: Boolean = false) {
     val batsmen = innings.batsmen
     if (batsmen.isEmpty()) return
 
@@ -249,7 +255,7 @@ fun BattingSection(innings: InningsData, onPlayerClick: (PlayerProfileData) -> U
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text("TOTAL", color = TextGray, fontSize = 11.sp, fontFamily = GilroyFontFamily, fontWeight = FontWeight.Bold)
-                    Text("${innings.total}/${innings.wickets}", color = Color(0xFF00BFA5), fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = GilroyFontFamily)
+                    Text("${innings.total}/${innings.wickets}", color = if (isPremium) GoldPrimary else Color(0xFF00BFA5), fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = GilroyFontFamily)
                 }
             }
         }

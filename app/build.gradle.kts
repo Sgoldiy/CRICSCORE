@@ -16,8 +16,8 @@ android {
         applicationId = "com.cricpeak.scorelive"
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.2.0"
+        versionCode = 3
+        versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -40,8 +40,7 @@ android {
         compose = true
     }
     defaultConfig {
-        manifestPlaceholders["izooto_app_id"] =
-            "3b86c08efa9c30f2722903ab7cdf5be1ccf97039"
+        manifestPlaceholders["izooto_app_id"] = "3b86c08efa9c30f2722903ab7cdf5be1ccf97039"
     }
 }
 

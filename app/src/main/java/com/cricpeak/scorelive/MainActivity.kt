@@ -3,6 +3,8 @@ package com.cricpeak.scorelive
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Bundle
+import android.preference.PreferenceManager
+import android.telecom.Call
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -41,15 +43,28 @@ import com.cricpeak.scorelive.util.NetworkUtils
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cricpeak.scorelive.ads.AdsViewModel
 import com.cricpeak.scorelive.billing.BillingViewModel
+import com.cricpeak.scorelive.ui.PlayerProfileData
+import com.cricpeak.scorelive.ui.PlayerProfileScreen
+import com.cricpeak.scorelive.ui.ScorecardScreen
+import com.cricpeak.scorelive.ui.apicallfiles.InstallTracker
 import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.common.api.Response
+import com.google.gson.Gson
 import com.izooto.iZooto
+import org.json.JSONObject
+import javax.security.auth.callback.Callback
+import kotlin.jvm.java
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
+        // ✅ ADD THIS HERE (IMPORTANT)
+        InstallTracker.trackInstall(this)
+
         // Initialize Mobile Ads SDK
         MobileAds.initialize(this) {}
+
         iZooto.initialize(this)
             .setTokenReceivedListener { token ->
                 Log.d("iZooto", "Token: $token")
@@ -58,14 +73,16 @@ class MainActivity : ComponentActivity() {
 
         iZooto.promptForPushNotifications()
         iZooto.setSubscription(true)
+
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb()),
             navigationBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb())
         )
+
         setContent {
             val billingViewModel: BillingViewModel = viewModel()
             val isPremium by billingViewModel.isPremium.collectAsState()
-            
+
             CRICPEAKTheme(isPremium = isPremium) {
                 AppNavigation(activity = this, billingViewModel = billingViewModel)
             }
@@ -146,17 +163,20 @@ fun AppNavigation(activity: MainActivity? = null, billingViewModel: BillingViewM
         startDestination = "splash"
     ) {
         composable("splash") {
-            SplashScreen(onTimeout = {
-                if (showOnboarding) {
-                    navController.navigate("onboarding") {
-                        popUpTo("splash") { inclusive = true }
+            SplashScreen(
+                onTimeout = {
+                    if (showOnboarding) {
+                        navController.navigate("onboarding") {
+                            popUpTo("splash") { inclusive = true }
+                        }
+                    } else {
+                        navController.navigate("home") {
+                            popUpTo("splash") { inclusive = true }
+                        }
                     }
-                } else {
-                    navController.navigate("home") {
-                        popUpTo("splash") { inclusive = true }
-                    }
-                }
-            })
+                },
+                isPremium = isPremium
+            )
         }
         
         composable("onboarding") {
@@ -224,7 +244,10 @@ fun AppNavigation(activity: MainActivity? = null, billingViewModel: BillingViewM
         }
 
         composable("privacy_policy") {
-            PrivacyPolicyScreen(onBack = { navController.popBackStack() })
+            PrivacyPolicyScreen(
+                onBack = { navController.popBackStack() },
+                isPremium = isPremium
+            )
         }
         
         composable(
@@ -250,5 +273,24 @@ fun AppNavigation(activity: MainActivity? = null, billingViewModel: BillingViewM
                 onBackClick = { navController.popBackStack() }
             )
         }
+
+        composable(
+            route = "player_profile",
+        ) {
+            val player = navController.previousBackStackEntry
+                ?.savedStateHandle
+                ?.get<PlayerProfileData>("player")
+
+            if (player != null) {
+                PlayerProfileScreen(
+                    player = player,
+                    onBack = { navController.popBackStack() },
+                    isPremium = isPremium
+                )
+            }
+        }
     }
 }
+
+
+

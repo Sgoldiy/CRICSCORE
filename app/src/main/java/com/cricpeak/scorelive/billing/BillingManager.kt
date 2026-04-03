@@ -2,13 +2,12 @@ package com.cricpeak.scorelive.billing
 
 import android.app.Activity
 import android.content.Context
+import android.util.Log
 import com.android.billingclient.api.*
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class BillingManager(
     private val context: Context,
@@ -16,9 +15,15 @@ class BillingManager(
     private val scope: CoroutineScope
 ) : PurchasesUpdatedListener {
 
+    private val TAG = "BillingManager"
+
     private val billingClient = BillingClient.newBuilder(context)
         .setListener(this)
-        .enablePendingPurchases()
+        .enablePendingPurchases(
+            PendingPurchasesParams.newBuilder()
+                .enableOneTimeProducts()
+                .build()
+        )
         .build()
 
     private val _products = MutableStateFlow<List<ProductDetails>>(emptyList())
@@ -37,128 +42,132 @@ class BillingManager(
 
     private fun startConnection() {
         billingClient.startConnection(object : BillingClientStateListener {
-            override fun onBillingSetupFinished(billingResult: BillingResult) {
-                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+            override fun onBillingSetupFinished(result: BillingResult) {
+                if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                     queryProducts()
                     checkPurchases()
                 }
             }
 
             override fun onBillingServiceDisconnected() {
-                // Try to restart connection
                 startConnection()
             }
         })
     }
 
     private fun queryProducts() {
-        val productList = productIds.map { productId ->
-            val productType = if (productId == "lifetime_access") {
-                BillingClient.ProductType.INAPP
-            } else {
-                BillingClient.ProductType.SUBS
-            }
-            QueryProductDetailsParams.Product.newBuilder()
-                .setProductId(productId)
-                .setProductType(productType)
-                .build()
-        }
+        scope.launch {
+            val list = mutableListOf<ProductDetails>()
 
-        val params = QueryProductDetailsParams.newBuilder()
-            .setProductList(productList)
-            .build()
+            // SUBS
+            val subsParams = QueryProductDetailsParams.newBuilder()
+                .setProductList(
+                    productIds.filter { it != "lifetime_access" }.map {
+                        QueryProductDetailsParams.Product.newBuilder()
+                            .setProductId(it)
+                            .setProductType(BillingClient.ProductType.SUBS)
+                            .build()
+                    }
+                ).build()
 
-        billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsList ->
-            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                println("Products loaded: ${productDetailsList.size}")
-                _products.value = productDetailsList
-            }
+            val subsResult = billingClient.queryProductDetails(subsParams)
+            subsResult.productDetailsList?.let { list.addAll(it) }
+
+            // INAPP
+            val inAppParams = QueryProductDetailsParams.newBuilder()
+                .setProductList(
+                    listOf("lifetime_access").map {
+                        QueryProductDetailsParams.Product.newBuilder()
+                            .setProductId(it)
+                            .setProductType(BillingClient.ProductType.INAPP)
+                            .build()
+                    }
+                ).build()
+
+            val inAppResult = billingClient.queryProductDetails(inAppParams)
+            inAppResult.productDetailsList?.let { list.addAll(it) }
+
+            _products.value = list
         }
     }
 
-    fun launchBillingFlow(activity: Activity, productDetails: ProductDetails) {
+    fun launchBillingFlow(activity: Activity, product: ProductDetails) {
 
-        if (!billingClient.isReady) {
-            println("Billing not ready yet ❌")
-            return
+        val paramsBuilder = BillingFlowParams.ProductDetailsParams.newBuilder()
+            .setProductDetails(product)
+
+        product.subscriptionOfferDetails?.firstOrNull()?.let {
+            paramsBuilder.setOfferToken(it.offerToken)
         }
 
-        val offerToken = productDetails.subscriptionOfferDetails
-            ?.firstOrNull()
-            ?.offerToken
-
-        val productDetailsParamsList = listOf(
-            BillingFlowParams.ProductDetailsParams.newBuilder()
-                .setProductDetails(productDetails)
-                .apply {
-                    offerToken?.let { setOfferToken(it) }
-                }
-                .build()
-        )
-
-        val billingFlowParams = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(productDetailsParamsList)
+        val billingParams = BillingFlowParams.newBuilder()
+            .setProductDetailsParamsList(listOf(paramsBuilder.build()))
             .build()
 
-        val result = billingClient.launchBillingFlow(activity, billingFlowParams)
-
-        println("Billing launch result: ${result.responseCode}")
+        billingClient.launchBillingFlow(activity, billingParams)
     }
 
-    override fun onPurchasesUpdated(billingResult: BillingResult, purchases: List<Purchase>?) {
-        if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
-            for (purchase in purchases) {
-                handlePurchase(purchase)
-            }
+    override fun onPurchasesUpdated(result: BillingResult, purchases: List<Purchase>?) {
+
+        if (result.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
+            purchases.forEach { handlePurchase(it) }
         }
     }
 
     private fun handlePurchase(purchase: Purchase) {
-        if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
-            if (!purchase.isAcknowledged) {
-                val acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
-                    .setPurchaseToken(purchase.purchaseToken)
-                    .build()
-                billingClient.acknowledgePurchase(acknowledgePurchaseParams) { billingResult ->
-                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                        scope.launch {
-                            premiumManager.setPremiumStatus(true)
-                        }
-                    }
-                }
-            } else {
-                scope.launch {
-                    premiumManager.setPremiumStatus(true)
+
+        if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) return
+
+        if (!purchase.isAcknowledged) {
+
+            val params = AcknowledgePurchaseParams.newBuilder()
+                .setPurchaseToken(purchase.purchaseToken)
+                .build()
+
+            billingClient.acknowledgePurchase(params) {
+                if (it.responseCode == BillingClient.BillingResponseCode.OK) {
+                    scope.launch { premiumManager.setPremiumStatus(true) }
                 }
             }
+
+        } else {
+            scope.launch { premiumManager.setPremiumStatus(true) }
         }
     }
 
     private fun checkPurchases() {
-        // Check Subscriptions
-        billingClient.queryPurchasesAsync(
-            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build()
-        ) { result, purchases ->
-            if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                val isPremium = purchases.any { it.purchaseState == Purchase.PurchaseState.PURCHASED }
-                if (isPremium) {
-                    scope.launch { premiumManager.setPremiumStatus(true) }
-                } else {
-                    // Also check INAPP for lifetime
-                    checkLifetimePurchase()
-                }
+        scope.launch {
+
+            val subs = billingClient.queryPurchasesAsync(
+                QueryPurchasesParams.newBuilder()
+                    .setProductType(BillingClient.ProductType.SUBS)
+                    .build()
+            )
+
+            val hasSub = subs.purchasesList.any {
+                it.purchaseState == Purchase.PurchaseState.PURCHASED && it.isAcknowledged
             }
+
+            if (hasSub) {
+                premiumManager.setPremiumStatus(true)
+                return@launch
+            }
+
+            val inApp = billingClient.queryPurchasesAsync(
+                QueryPurchasesParams.newBuilder()
+                    .setProductType(BillingClient.ProductType.INAPP)
+                    .build()
+            )
+
+            val hasInApp = inApp.purchasesList.any {
+                it.purchaseState == Purchase.PurchaseState.PURCHASED
+            }
+
+            premiumManager.setPremiumStatus(hasInApp)
         }
     }
 
-    private fun checkLifetimePurchase() {
-        billingClient.queryPurchasesAsync(
-            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()
-        ) { result, purchases ->
-            if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                val isPremium = purchases.any { it.purchaseState == Purchase.PurchaseState.PURCHASED }
-                scope.launch { premiumManager.setPremiumStatus(isPremium) }
-            }
-        }
+    fun release() {
+        billingClient.endConnection()
     }
 }

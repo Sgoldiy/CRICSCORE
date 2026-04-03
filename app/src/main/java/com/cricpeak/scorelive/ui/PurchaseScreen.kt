@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cricpeak.scorelive.billing.BillingViewModel
+import com.cricpeak.scorelive.ui.theme.RadialGold
 
 @Composable
 fun PurchaseScreen(
@@ -64,11 +65,11 @@ fun PurchaseScreen(
     )
     val goldGradient = Brush.radialGradient(
         colors = listOf(
-            Color(0xFFFFD700).copy(alpha = 0.25f),
+            RadialGold.copy(alpha = 0.25f),
             Color.Transparent
         ),
-        center = Offset(600f, -100f),
-        radius = 1200f
+        center = Offset(540f, -50f),
+        radius = 1000f
     )
     val fallbackPrices = listOf("₹199", "₹399", "₹599", "₹2999")
 

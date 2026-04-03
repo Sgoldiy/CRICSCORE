@@ -1,6 +1,7 @@
 package com.cricpeak.scorelive.ui
 
 import android.app.Activity
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -53,7 +54,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -109,14 +109,10 @@ import com.cricpeak.scorelive.ui.components.RewardPolicyDialog
 import com.cricpeak.scorelive.ui.theme.CardBackground
 import com.cricpeak.scorelive.ui.theme.DarkBackground
 import com.cricpeak.scorelive.ui.theme.GilroyFontFamily
-import com.cricpeak.scorelive.ui.theme.GoldBackground
 import com.cricpeak.scorelive.ui.theme.GoldPrimary
+import com.cricpeak.scorelive.ui.theme.RadialGold
 import com.cricpeak.scorelive.ui.theme.RadialTeal
 import com.cricpeak.scorelive.ui.theme.TextGray
-import kotlinx.coroutines.delay
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -140,6 +136,9 @@ fun MatchDetailsScreen(
     onBackClick: () -> Unit,
     onPurchaseClick: () -> Unit = {},
 ) {
+    var isScreenUnlocked by remember {
+        mutableStateOf(isPremium)
+    }
     val context = LocalContext.current
     val activity = context as? Activity
     var selectedTabIndex by remember { mutableStateOf(0) }
@@ -157,16 +156,16 @@ fun MatchDetailsScreen(
     val scoreAnimation by viewModel.scoreAnimationState.collectAsState()
     val adsState: AdsState by adsViewModel.adsState.collectAsState()
     val fantasyTeam by viewModel.fantasyTeam.collectAsState()
+    var rewardPendingOver by remember { mutableStateOf<Int?>(null) }
 
     // Reward Ad States
     var showRewardPolicyDialog by remember { mutableStateOf(false) }
-    var rewardPendingOver by remember { mutableStateOf<Int?>(null) }
-
+    var isAdShowing by remember { mutableStateOf(false) }
     // Screen Policy Dialog State
     var showMatchDetailsPolicyDialog by remember { mutableStateOf(false) }
 
-    // Fantasy Info Dialog
-    var showFantasyInfoDialog by remember { mutableStateOf(false) }
+    // Fantasy Info Dialogs
+    var showTeamsNotAnnouncedDialog by remember { mutableStateOf(false) }
 
     // Free Overs Tracking Logic
     var unlockedUntilOver by remember {
@@ -185,6 +184,7 @@ fun MatchDetailsScreen(
                 isPremium
             )
         }
+
 
         val rewardLiveConfig = adsState.reward_live
         if (rewardLiveConfig.enabled && rewardLiveConfig.ads_unit.isNotEmpty()) {
@@ -313,19 +313,19 @@ fun MatchDetailsScreen(
                     }
 
                 // Set initial "current" over as authorized if it's the first load
-                if (matchData.isLive && !isPremium) {
-                    if (unlockedUntilOver == -1) {
-                        val currentOverVal =
-                            matchData.innings.lastOrNull()?.oversBowled?.toDoubleOrNull()?.toInt()
-                                ?: 0
-                        // Automatically unlock current over + next 2 overs
-                        unlockedUntilOver = currentOverVal + 3
-                        RewardPrefs.setOversUnlockedUntil(context, matchId, unlockedUntilOver)
-                    }
+                val currentOverVal =
+                    matchData.innings.lastOrNull()?.oversBowled?.toDoubleOrNull()?.toInt() ?: 0
 
-                    if (!RewardPrefs.isMatchDetailsPolicyAccepted(context)) {
-                        showMatchDetailsPolicyDialog = true
-                    }
+                if (unlockedUntilOver == -1) {
+                    unlockedUntilOver = currentOverVal + 2
+                    RewardPrefs.setOversUnlockedUntil(context, matchId, unlockedUntilOver)
+                }
+
+// Initially allow access
+                isScreenUnlocked = currentOverVal <= unlockedUntilOver
+
+                if (!RewardPrefs.isMatchDetailsPolicyAccepted(context) && currentOverVal > unlockedUntilOver) {
+                    showMatchDetailsPolicyDialog = true
                 }
             }
 
@@ -344,43 +344,52 @@ fun MatchDetailsScreen(
             if (matchData.isLive) {
                 val currentOverInt =
                     matchData.innings.lastOrNull()?.oversBowled?.toDoubleOrNull()?.toInt() ?: 0
-
-                // USER REQUEST: Don't show ad immediately on resume/first load
-                if (isFirstMatchLoad) {
-                    if (currentOverInt > unlockedUntilOver) {
-                        // User came back and it's already past the limit -> Give 2 free overs from here
-                        unlockedUntilOver = currentOverInt + 2
-                        RewardPrefs.setOversUnlockedUntil(context, matchId, unlockedUntilOver)
-                    }
-                    isFirstMatchLoad = false
-                    return@LaunchedEffect
-                }
-
                 // If the user has progressed beyond the unlocked limit, show ad automatically
-                if (currentOverInt > unlockedUntilOver) {
+                if (currentOverInt > unlockedUntilOver && !isAdShowing) {
+                    rewardPendingOver = currentOverInt
+                    isAdShowing = true
+
                     val rewardConfig = adsState.reward_live
+
                     if (rewardConfig.enabled && rewardConfig.ads_unit.isNotEmpty() && activity != null) {
-                        if (RewardPrefs.isPolicyAccepted(context)) {
+
+                        if (RewardPrefs.isMatchDetailsPolicyAccepted(context)) {
+
                             AdRewardManager.showAd(
                                 activity = activity,
                                 adUnitId = rewardConfig.ads_unit,
                                 isPremium = isPremium,
                                 onRewardEarned = {
-                                    unlockedUntilOver =
-                                        currentOverInt + 2 // Unlock current and next 2 overs
+
+                                    unlockedUntilOver += 2
+
                                     RewardPrefs.setOversUnlockedUntil(
                                         context,
                                         matchId,
                                         unlockedUntilOver
                                     )
+
+                                    isScreenUnlocked = true   // ✅ ADD THIS
+                                    isAdShowing = false      // ✅ ADD THIS
+
+                                    Toast.makeText(
+                                        context,
+                                        "You have unlocked next 2 overs experience",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
                             )
+
                         } else {
                             rewardPendingOver = currentOverInt
                             showRewardPolicyDialog = true
+                            isAdShowing = false // ✅ ADD THIS
                         }
+                    }else {
+                        isAdShowing = false // ✅ FIX
                     }
                 }
+                isScreenUnlocked = currentOverInt <= unlockedUntilOver
             }
         }
     }
@@ -396,18 +405,26 @@ fun MatchDetailsScreen(
         center = Offset(540f, -50f),
         radius = 1000f
     )
+    val goldGradient = Brush.radialGradient(
+        colors = listOf(
+            RadialGold.copy(alpha = 0.25f),
+            Color.Transparent
+        ),
+        center = Offset(540f, -50f),
+        radius = 1000f
+    )
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(if (isPremium) GoldBackground else DarkBackground)
+            .background(DarkBackground)
     ) {
         // Background Radial Gradient
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(350.dp)
-                .background(radialGradient)
+                .background(if (isPremium) goldGradient else radialGradient)
         )
 
         // Handle loading and error states
@@ -415,9 +432,7 @@ fun MatchDetailsScreen(
             is MatchDetailsState.Loading -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
-                        color = if (isPremium) GoldPrimary else Color(
-                            0xFF00FF00
-                        )
+                        color = if (isPremium) GoldPrimary else Color(0xFF00FF00)
                     )
                 }
             }
@@ -447,505 +462,478 @@ fun MatchDetailsScreen(
 
             is MatchDetailsState.Success -> {
                 val matchData = (matchDetailsState as MatchDetailsState.Success).matchData
-
-                PullToRefreshBox(
-                    isRefreshing = isRefreshing,
-                    onRefresh = { viewModel.loadMatchDetails(matchId, isRefresh = true) },
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .statusBarsPadding()
-                            .pointerInput(Unit) {
-                                var totalDrag = 0f
-                                detectHorizontalDragGestures(
-                                    onHorizontalDrag = { _, dragAmount ->
-                                        totalDrag += dragAmount
-                                    },
-                                    onDragEnd = {
-                                        if (totalDrag > 200) {
-                                            if (selectedTabIndex > 0) selectedTabIndex--
-                                        } else if (totalDrag < -200) {
-                                            if (selectedTabIndex < tabs.size - 1) selectedTabIndex++
-                                        }
-                                        totalDrag = 0f
-                                    }
-                                )
-                            },
-                        contentPadding = PaddingValues(bottom = 32.dp)
+                if (isScreenUnlocked) {
+                    PullToRefreshBox(
+                        isRefreshing = isRefreshing,
+                        onRefresh = { viewModel.loadMatchDetails(matchId, isRefresh = true) },
+                        modifier = Modifier.fillMaxSize()
                     ) {
-                        // Header Section
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 12.dp, bottom = 12.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(
-                                        text = matchData.matchName,
-                                        color = if (isPremium) GoldPrimary else Color.White,
-                                        fontSize = 20.sp,
-                                        fontFamily = GilroyFontFamily,
-                                        fontWeight = FontWeight.Bold
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .statusBarsPadding()
+                                .pointerInput(Unit) {
+                                    var totalDrag = 0f
+                                    detectHorizontalDragGestures(
+                                        onHorizontalDrag = { _, dragAmount ->
+                                            totalDrag += dragAmount
+                                        },
+                                        onDragEnd = {
+                                            if (totalDrag > 200) {
+                                                if (selectedTabIndex > 0) selectedTabIndex--
+                                            } else if (totalDrag < -200) {
+                                                if (selectedTabIndex < tabs.size - 1) selectedTabIndex++
+                                            }
+                                            totalDrag = 0f
+                                        }
                                     )
-                                    Text(
-                                        text = "Live from ${matchData.venue.name}",
-                                        color = if (isPremium) GoldPrimary.copy(alpha = 0.7f) else TextGray,
-                                        fontSize = 13.sp,
-                                        fontFamily = GilroyFontFamily
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = onBackClick,
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(end = 16.dp)
-                                        .background(Color.White.copy(alpha = 0.1f), CircleShape)
-                                        .size(36.dp)
-                                ) {
-                                    Text("✕", color = Color.White, fontSize = 16.sp)
-                                }
-                            }
-                        }
-
-                        // Scorecard Detail Card
-                        item {
-                            DetailScoreCard(matchData, scoreAnimation, isPremium)
-                        }
-
-                        item { Spacer(modifier = Modifier.height(16.dp)) }
-
-                        // Dynamic Player Performance Card
-                        item {
-                            PlayerPerformanceCard(
-                                matchData,
-                                isPremium = isPremium,
-                                onPlayerClick = { id ->
-                                    matchData.players.find { it.id == id }?.let { p ->
-                                        selectedPlayerProfile = PlayerProfileData(
-                                            id = p.id,
-                                            name = p.displayName,
-                                            firstName = p.firstName,
-                                            lastName = p.lastName,
-                                            middleName = p.middleName,
-                                            role = p.type ?: "Player",
-                                            imageUrl = p.imageUrl ?: "",
-                                            battingStyle = p.battingStyle ?: p.battingHand ?: "N/A",
-                                            bowlingStyle = p.bowlingStyle ?: p.bowlingType ?: "N/A",
-                                            dob = p.dob,
-                                            birthPlace = p.birthPlace,
-                                            height = p.height,
-                                            bio = p.bio,
-                                            isCaptain = p.isCaptain,
-                                            isWicketKeeper = p.isWicketKeeper
-                                        )
-                                    }
-                                })
-                        }
-
-                        item { Spacer(modifier = Modifier.height(8.dp)) }
-
-                        // 1. Match Details Banner Ad
-                        if (!isPremium && adsState.match_details_banner.enabled && adsState.match_details_banner.ads_unit.isNotEmpty()) {
+                                },
+                            contentPadding = PaddingValues(bottom = 32.dp)
+                        ) {
+                            // Header Section
                             item {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 8.dp)
+                                        .padding(top = 12.dp, bottom = 12.dp)
                                 ) {
-                                    BannerAdView(
-                                        adUnitId = adsState.match_details_banner.ads_unit,
-                                        isPremium = isPremium
-                                    )
-                                }
-                            }
-                        }
-
-                        // Recent Over Stats
-                        item {
-                            RecentOverStats(commentsData.recentOvers)
-                        }
-
-                        // Tabs below the over screen
-                        item {
-                            DetailTabs(tabs, selectedTabIndex, isPremium) { selectedTabIndex = it }
-                        }
-
-                        // Conditional Content based on selected tab with animation
-                        item {
-                            var isTabRendered by remember { mutableStateOf(false) }
-                            LaunchedEffect(selectedTabIndex) {
-                                isTabRendered = false
-                                kotlinx.coroutines.delay(50) // Tiny delay to let the UI breathe
-                                isTabRendered = true
-                            }
-
-                            if (!isTabRendered) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(300.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(
-                                        color = if (isPremium) GoldPrimary else Color(
-                                            0xFF00BFA5
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = matchData.matchName,
+                                            color = Color.White,
+                                            fontSize = 20.sp,
+                                            fontFamily = GilroyFontFamily,
+                                            fontWeight = FontWeight.Bold
                                         )
-                                    )
+                                        Text(
+                                            text = "Live from ${matchData.venue.name}",
+                                            color = TextGray,
+                                            fontSize = 13.sp,
+                                            fontFamily = GilroyFontFamily
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = onBackClick,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(end = 16.dp)
+                                            .background(Color.White.copy(alpha = 0.1f), CircleShape)
+                                            .size(36.dp)
+                                    ) {
+                                        Text("✕", color = Color.White, fontSize = 16.sp)
+                                    }
                                 }
-                            } else {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    when (selectedTabIndex) {
-                                        0 -> { // Summary
-                                            // Fun Fantasy Team Button
-                                            FunFantasyTeamButton(
-                                                matchData = matchData,
-                                                isPremium = isPremium,
-                                                onFantasyClick = {
-                                                    viewModel.generateFantasyTeam(
-                                                        matchData.players,
-                                                        matchData.homeTeam.id,
-                                                        matchData.awayTeam.id
-                                                    )
-                                                },
-                                                onInfoClick = { showFantasyInfoDialog = true },
-                                                onPurchaseClick = onPurchaseClick
-                                            )
+                            }
 
-                                            SquadView(
-                                                "${matchData.homeTeam.name} Squad",
-                                                homeTeamPlayers,
-                                                isPremium = isPremium,
-                                                onPlayerClick = { id ->
-                                                    matchData.players.find { it.id == id }
-                                                        ?.let { p ->
-                                                            selectedPlayerProfile =
-                                                                PlayerProfileData(
-                                                                    id = p.id,
-                                                                    name = p.displayName,
-                                                                    firstName = p.firstName,
-                                                                    lastName = p.lastName,
-                                                                    middleName = p.middleName,
-                                                                    role = p.type ?: "Player",
-                                                                    imageUrl = p.imageUrl ?: "",
-                                                                    battingStyle = p.battingStyle
-                                                                        ?: p.battingHand
-                                                                        ?: "N/A",
-                                                                    bowlingStyle = p.bowlingStyle
-                                                                        ?: p.bowlingType
-                                                                        ?: "N/A",
-                                                                    dob = p.dob,
-                                                                    birthPlace = p.birthPlace,
-                                                                    height = p.height,
-                                                                    bio = p.bio,
-                                                                    isCaptain = p.isCaptain,
-                                                                    isWicketKeeper = p.isWicketKeeper
-                                                                )
-                                                        }
-                                                }
-                                            )
+                            // Scorecard Detail Card
+                            item {
+                                DetailScoreCard(matchData, scoreAnimation, isPremium)
+                            }
 
-                                            // 6. Teams Banner Ad - Between two teams
-                                            if (!isPremium && adsState.teams_banner.enabled && adsState.teams_banner.ads_unit.isNotEmpty()) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(vertical = 16.dp)
-                                                ) {
-                                                    BannerAdView(
-                                                        adUnitId = adsState.teams_banner.ads_unit,
-                                                        isPremium = isPremium
-                                                    )
-                                                }
-                                            }
+                            item { Spacer(modifier = Modifier.height(16.dp)) }
 
-                                            Spacer(modifier = Modifier.height(24.dp))
-                                            SquadView(
-                                                "${matchData.awayTeam.name} Squad",
-                                                awayTeamPlayers,
-                                                isPremium = isPremium,
-                                                onPlayerClick = { id ->
-                                                    matchData.players.find { it.id == id }
-                                                        ?.let { p ->
-                                                            selectedPlayerProfile =
-                                                                PlayerProfileData(
-                                                                    id = p.id,
-                                                                    name = p.displayName,
-                                                                    firstName = p.firstName,
-                                                                    lastName = p.lastName,
-                                                                    middleName = p.middleName,
-                                                                    role = p.type ?: "Player",
-                                                                    imageUrl = p.imageUrl ?: "",
-                                                                    battingStyle = p.battingStyle
-                                                                        ?: p.battingHand
-                                                                        ?: "N/A",
-                                                                    bowlingStyle = p.bowlingStyle
-                                                                        ?: p.bowlingType
-                                                                        ?: "N/A",
-                                                                    dob = p.dob,
-                                                                    birthPlace = p.birthPlace,
-                                                                    height = p.height,
-                                                                    bio = p.bio,
-                                                                    isCaptain = p.isCaptain,
-                                                                    isWicketKeeper = p.isWicketKeeper
-                                                                )
-                                                        }
-                                                }
-                                            )
-                                            Spacer(modifier = Modifier.height(24.dp))
-                                            MatchInfoTable(matchInfoState.value, isPremium)
-                                            Spacer(modifier = Modifier.height(24.dp))
-                                        }
-
-                                        1 -> { // Scorecard
-                                            val fullInningsList =
-                                                mutableListOf(innings1, innings2)
-                                            // Always add extra innings if they are available, regardless of gameType check
-                                            innings3?.let { fullInningsList.add(it) }
-                                            innings4?.let { fullInningsList.add(it) }
-
-                                            ScorecardScreen(
-                                                inningsList = fullInningsList,
-                                                onPlayerClick = { player ->
-                                                    selectedPlayerProfile = player
-                                                },
-                                                adsState = if (isPremium) adsState.copy(
-                                                    show_banner_ads = false,
-                                                    show_interstitial_ads = false
-                                                ) else adsState,
-                                                gameType = matchData.gameType
+                            // Dynamic Player Performance Card
+                            item {
+                                PlayerPerformanceCard(
+                                    matchData,
+                                    isPremium = isPremium,
+                                    onPlayerClick = { id ->
+                                        matchData.players.find { it.id == id }?.let { p ->
+                                            selectedPlayerProfile = PlayerProfileData(
+                                                id = p.id,
+                                                name = p.displayName,
+                                                firstName = p.firstName,
+                                                lastName = p.lastName,
+                                                middleName = p.middleName,
+                                                role = p.type ?: "Player",
+                                                imageUrl = p.imageUrl ?: "",
+                                                battingStyle = p.battingStyle ?: p.battingHand
+                                                ?: "N/A",
+                                                bowlingStyle = p.bowlingStyle ?: p.bowlingType
+                                                ?: "N/A",
+                                                dob = p.dob,
+                                                birthPlace = p.birthPlace,
+                                                height = p.height,
+                                                bio = p.bio,
+                                                isCaptain = p.isCaptain,
+                                                isWicketKeeper = p.isWicketKeeper
                                             )
                                         }
+                                    })
+                            }
 
-                                        2 -> { // Commentary
-                                            when (commentsState) {
-                                                is CommentsState.Loading -> {
+                            item { Spacer(modifier = Modifier.height(8.dp)) }
+
+                            // 1. Match Details Banner Ad
+                            if (!isPremium && adsState.match_details_banner.enabled && adsState.match_details_banner.ads_unit.isNotEmpty()) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp)
+                                    ) {
+                                        BannerAdView(
+                                            adUnitId = adsState.match_details_banner.ads_unit,
+                                            isPremium = isPremium
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Recent Over Stats
+                            item {
+                                RecentOverStats(commentsData.recentOvers)
+                            }
+
+                            // Tabs below the over screen
+                            item {
+                                DetailTabs(tabs, selectedTabIndex, isPremium) {
+                                    selectedTabIndex = it
+                                }
+                            }
+
+                            // Conditional Content based on selected tab with animation
+                            item {
+                                var isTabRendered by remember { mutableStateOf(false) }
+                                LaunchedEffect(selectedTabIndex) {
+                                    isTabRendered = false
+                                    kotlinx.coroutines.delay(50) // Tiny delay to let the UI breathe
+                                    isTabRendered = true
+                                }
+
+                                if (!isTabRendered) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(300.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            color = if (isPremium) GoldPrimary else Color(
+                                                0xFF00BFA5
+                                            )
+                                        )
+                                    }
+                                } else {
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        when (selectedTabIndex) {
+                                            0 -> { // Summary
+                                                // Fun Fantasy Team Button
+                                                if (matchData.isLive || matchData.isInProgress) {
+                                                    FunFantasyTeamButton(
+                                                        matchData = matchData,
+                                                        isPremium = isPremium,
+                                                        onFantasyClick = {
+                                                            viewModel.generateFantasyTeam(
+                                                                matchData.players,
+                                                                matchData.homeTeam.id,
+                                                                matchData.awayTeam.id
+                                                            )
+                                                        },
+                                                        onPurchaseClick = onPurchaseClick, // 👈 redirect
+                                                        onInfoClick = {
+                                                            showTeamsNotAnnouncedDialog = true
+                                                        }
+                                                    )
+                                                }
+
+                                                SquadView(
+                                                    "${matchData.homeTeam.name} Squad",
+                                                    homeTeamPlayers,
+                                                    isPremium = isPremium,
+                                                    onPlayerClick = { id ->
+                                                        matchData.players.find { it.id == id }
+                                                            ?.let { p ->
+                                                                selectedPlayerProfile =
+                                                                    PlayerProfileData(
+                                                                        id = p.id,
+                                                                        name = p.displayName,
+                                                                        firstName = p.firstName,
+                                                                        lastName = p.lastName,
+                                                                        middleName = p.middleName,
+                                                                        role = p.type ?: "Player",
+                                                                        imageUrl = p.imageUrl ?: "",
+                                                                        battingStyle = p.battingStyle
+                                                                            ?: p.battingHand
+                                                                            ?: "N/A",
+                                                                        bowlingStyle = p.bowlingStyle
+                                                                            ?: p.bowlingType
+                                                                            ?: "N/A",
+                                                                        dob = p.dob,
+                                                                        birthPlace = p.birthPlace,
+                                                                        height = p.height,
+                                                                        bio = p.bio,
+                                                                        isCaptain = p.isCaptain,
+                                                                        isWicketKeeper = p.isWicketKeeper
+                                                                    )
+                                                            }
+                                                    }
+                                                )
+
+                                                // 6. Teams Banner Ad - Between two teams
+                                                if (!isPremium && adsState.teams_banner.enabled && adsState.teams_banner.ads_unit.isNotEmpty()) {
                                                     Box(
                                                         modifier = Modifier
                                                             .fillMaxWidth()
-                                                            .padding(32.dp),
-                                                        contentAlignment = Alignment.Center
+                                                            .padding(vertical = 16.dp)
                                                     ) {
-                                                        CircularProgressIndicator(
-                                                            color = if (isPremium) GoldPrimary else Color(
-                                                                0xFF00BFA5
-                                                            )
+                                                        BannerAdView(
+                                                            adUnitId = adsState.teams_banner.ads_unit,
+                                                            isPremium = isPremium
                                                         )
                                                     }
                                                 }
 
-                                                is CommentsState.Error -> {
-                                                    Text(
-                                                        text = "Failed to load commentary",
-                                                        color = TextGray,
-                                                        fontSize = 14.sp,
-                                                        fontFamily = GilroyFontFamily,
-                                                        modifier = Modifier.padding(24.dp)
-                                                    )
-                                                }
+                                                Spacer(modifier = Modifier.height(24.dp))
+                                                SquadView(
+                                                    "${matchData.awayTeam.name} Squad",
+                                                    awayTeamPlayers,
+                                                    isPremium = isPremium,
+                                                    onPlayerClick = { id ->
+                                                        matchData.players.find { it.id == id }
+                                                            ?.let { p ->
+                                                                selectedPlayerProfile =
+                                                                    PlayerProfileData(
+                                                                        id = p.id,
+                                                                        name = p.displayName,
+                                                                        firstName = p.firstName,
+                                                                        lastName = p.lastName,
+                                                                        middleName = p.middleName,
+                                                                        role = p.type ?: "Player",
+                                                                        imageUrl = p.imageUrl ?: "",
+                                                                        battingStyle = p.battingStyle
+                                                                            ?: p.battingHand
+                                                                            ?: "N/A",
+                                                                        bowlingStyle = p.bowlingStyle
+                                                                            ?: p.bowlingType
+                                                                            ?: "N/A",
+                                                                        dob = p.dob,
+                                                                        birthPlace = p.birthPlace,
+                                                                        height = p.height,
+                                                                        bio = p.bio,
+                                                                        isCaptain = p.isCaptain,
+                                                                        isWicketKeeper = p.isWicketKeeper
+                                                                    )
+                                                            }
+                                                    }
+                                                )
+                                                Spacer(modifier = Modifier.height(24.dp))
+                                                MatchInfoTable(matchInfoState.value, isPremium)
+                                                Spacer(modifier = Modifier.height(24.dp))
+                                            }
 
-                                                is CommentsState.Success -> {
-                                                    // Innings Selection
-                                                    if (commentsData.totalInnings > 0) {
-                                                        Row(
+                                            1 -> { // Scorecard
+                                                val fullInningsList =
+                                                    mutableListOf(innings1, innings2)
+                                                // Always add extra innings if they are available, regardless of gameType check
+                                                innings3?.let { fullInningsList.add(it) }
+                                                innings4?.let { fullInningsList.add(it) }
+
+                                                ScorecardScreen(
+                                                    inningsList = fullInningsList,
+                                                    onPlayerClick = { player ->
+                                                        selectedPlayerProfile = player
+                                                    },
+                                                    adsState = if (isPremium) adsState.copy(
+                                                        show_banner_ads = false,
+                                                        show_interstitial_ads = false
+                                                    ) else adsState,
+                                                    gameType = matchData.gameType,
+                                                    isPremium = isPremium
+                                                )
+                                            }
+
+                                            2 -> { // Commentary
+                                                when (commentsState) {
+                                                    is CommentsState.Loading -> {
+                                                        Box(
                                                             modifier = Modifier
                                                                 .fillMaxWidth()
-                                                                .padding(
-                                                                    horizontal = 16.dp,
-                                                                    vertical = 16.dp
-                                                                ),
-                                                            horizontalArrangement = Arrangement.Center,
-                                                            verticalAlignment = Alignment.CenterVertically
+                                                                .padding(32.dp),
+                                                            contentAlignment = Alignment.Center
                                                         ) {
-                                                            for (i in 1..commentsData.totalInnings) {
-                                                                val isSelected =
-                                                                    commentsData.currentInning == i
-                                                                val inningData =
-                                                                    matchData.innings.getOrNull(
-                                                                        i - 1
-                                                                    )
-                                                                val teamShortName =
-                                                                    if (inningData != null) {
-                                                                        matchData.getBattingTeam(
-                                                                            inningData
-                                                                        )?.shortName ?: "T$i"
-                                                                    } else "T$i"
-
-                                                                val displayLabel =
-                                                                    if (matchData.gameType.uppercase()
-                                                                            .contains("TEST") || commentsData.totalInnings > 2
-                                                                    ) {
-                                                                        "$teamShortName (${(i + 1) / 2})"
-                                                                    } else {
-                                                                        teamShortName
-                                                                    }
-
-                                                                val currentMatchId = matchId
-                                                                Card(
-                                                                    modifier = Modifier
-                                                                        .padding(horizontal = 2.dp)
-                                                                        .weight(1f)
-                                                                        .clickable {
-                                                                            viewModel.loadComments(
-                                                                                currentMatchId,
-                                                                                i
-                                                                            )
-                                                                        },
-                                                                    colors = CardDefaults.cardColors(
-                                                                        containerColor = if (isSelected) (if (isPremium) GoldPrimary else Color(
-                                                                            0xFF00BFA5
-                                                                        )) else (if (isPremium) Color(
-                                                                            0xFF2A2A1A
-                                                                        ) else CardBackground)
-                                                                    ),
-                                                                    shape = RoundedCornerShape(
-                                                                        12.dp
-                                                                    )
-                                                                ) {
-                                                                    Column(
-                                                                        modifier = Modifier
-                                                                            .padding(
-                                                                                vertical = 8.dp
-                                                                            )
-                                                                            .fillMaxWidth(),
-                                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                                        verticalArrangement = Arrangement.Center
-                                                                    ) {
-                                                                        Text(
-                                                                            text = displayLabel,
-                                                                            color = if (isSelected) Color.Black else (if (isPremium) GoldPrimary else Color.White),
-                                                                            fontWeight = FontWeight.Bold,
-                                                                            fontSize = 14.sp,
-                                                                            fontFamily = GilroyFontFamily,
-                                                                            textAlign = TextAlign.Center
-                                                                        )
-                                                                    }
-                                                                }
-                                                            }
+                                                            CircularProgressIndicator(
+                                                                color = if (isPremium) GoldPrimary else Color(
+                                                                    0xFF00BFA5
+                                                                )
+                                                            )
                                                         }
                                                     }
 
-                                                    if (commentsData.commentary.isEmpty()) {
+                                                    is CommentsState.Error -> {
                                                         Text(
-                                                            text = "No commentary available yet",
+                                                            text = "Failed to load commentary",
                                                             color = TextGray,
                                                             fontSize = 14.sp,
                                                             fontFamily = GilroyFontFamily,
                                                             modifier = Modifier.padding(24.dp)
                                                         )
-                                                    } else {
-                                                        val commentaryList =
-                                                            commentsData.commentary
-                                                        val isPaginating by viewModel.isPaginatingComments.collectAsState()
+                                                    }
 
-                                                        commentaryList.forEachIndexed { index, entry ->
-                                                            // Trigger pagination as user scrolls down
-                                                            if (index == commentaryList.size - 2) {
-                                                                LaunchedEffect(index) {
-                                                                    viewModel.loadMoreComments()
-                                                                }
-                                                            }
+                                                    is CommentsState.Success -> {
+                                                        // Innings Selection
+                                                        if (commentsData.totalInnings > 0) {
+                                                            Row(
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .padding(
+                                                                        horizontal = 16.dp,
+                                                                        vertical = 16.dp
+                                                                    ),
+                                                                horizontalArrangement = Arrangement.Center,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                for (i in 1..commentsData.totalInnings) {
+                                                                    val isSelected =
+                                                                        commentsData.currentInning == i
+                                                                    val inningData =
+                                                                        matchData.innings.getOrNull(
+                                                                            i - 1
+                                                                        )
+                                                                    val teamShortName =
+                                                                        if (inningData != null) {
+                                                                            matchData.getBattingTeam(
+                                                                                inningData
+                                                                            )?.shortName ?: "T$i"
+                                                                        } else "T$i"
 
-                                                            when (entry) {
-                                                                is CommentaryEntry.BallCommentary -> {
-                                                                    CommentaryItemFromApi(
-                                                                        entry,
-                                                                        matchData.players
-                                                                    )
-                                                                }
-
-                                                                is CommentaryEntry.OverScorecard -> {
-                                                                    // REWARDED ADS LOGIC FOR OVERS
-                                                                    val isLocked =
-                                                                        !isPremium && matchData.isLive && entry.overNumber > unlockedUntilOver
-
-                                                                    // 3. Overs Banner Ad - Before every 2 overs
-                                                                    if (!isPremium && entry.overNumber % 2 == 0 && adsState.overs_banner.enabled && adsState.overs_banner.ads_unit.isNotEmpty()) {
-                                                                        Box(
-                                                                            modifier = Modifier
-                                                                                .fillMaxWidth()
-                                                                                .padding(
-                                                                                    vertical = 16.dp
-                                                                                )
+                                                                    val displayLabel =
+                                                                        if (matchData.gameType.uppercase()
+                                                                                .contains("TEST") || commentsData.totalInnings > 2
                                                                         ) {
-                                                                            BannerAdView(
-                                                                                adUnitId = adsState.overs_banner.ads_unit,
-                                                                                isPremium = isPremium
+                                                                            "$teamShortName (${(i + 1) / 2})"
+                                                                        } else {
+                                                                            teamShortName
+                                                                        }
+
+                                                                    val currentMatchId = matchId
+                                                                    Card(
+                                                                        modifier = Modifier
+                                                                            .padding(horizontal = 2.dp)
+                                                                            .weight(1f)
+                                                                            .clickable {
+                                                                                viewModel.loadComments(
+                                                                                    currentMatchId,
+                                                                                    i
+                                                                                )
+                                                                            },
+                                                                        colors = CardDefaults.cardColors(
+                                                                            containerColor = if (isSelected) {
+                                                                                if (isPremium) Color.Black else Color(
+                                                                                    0xFF00BFA5
+                                                                                )
+                                                                            } else {
+                                                                                CardBackground
+                                                                            }
+                                                                        ),
+                                                                        border = if (isPremium && isSelected) BorderStroke(
+                                                                            1.5.dp,
+                                                                            GoldPrimary
+                                                                        ) else null,
+                                                                        shape = RoundedCornerShape(
+                                                                            12.dp
+                                                                        )
+                                                                    ) {
+                                                                        Column(
+                                                                            modifier = Modifier
+                                                                                .padding(
+                                                                                    vertical = 8.dp
+                                                                                )
+                                                                                .fillMaxWidth(),
+                                                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                                                            verticalArrangement = Arrangement.Center
+                                                                        ) {
+                                                                            Text(
+                                                                                text = displayLabel,
+                                                                                color = if (isSelected) Color.White else (Color.White),
+                                                                                fontWeight = FontWeight.Bold,
+                                                                                fontSize = 14.sp,
+                                                                                fontFamily = GilroyFontFamily,
+                                                                                textAlign = TextAlign.Center
                                                                             )
                                                                         }
-                                                                    }
-
-                                                                    if (isLocked) {
-                                                                        LockedOverItem(
-                                                                            overNumber = entry.overNumber,
-                                                                            onUnlockClick = {
-                                                                                val rewardConfig =
-                                                                                    adsState.reward_live
-                                                                                if (rewardConfig.enabled && rewardConfig.ads_unit.isNotEmpty()) {
-                                                                                    if (!RewardPrefs.isPolicyAccepted(
-                                                                                            context
-                                                                                        )
-                                                                                    ) {
-                                                                                        rewardPendingOver =
-                                                                                            entry.overNumber
-                                                                                        showRewardPolicyDialog =
-                                                                                            true
-                                                                                    } else {
-                                                                                        if (activity != null) {
-                                                                                            AdRewardManager.showAd(
-                                                                                                activity = activity,
-                                                                                                adUnitId = rewardConfig.ads_unit,
-                                                                                                isPremium = isPremium,
-                                                                                                onRewardEarned = {
-                                                                                                    unlockedUntilOver =
-                                                                                                        entry.overNumber + 2 // Unlock current and next 2 overs
-                                                                                                    RewardPrefs.setOversUnlockedUntil(
-                                                                                                        context,
-                                                                                                        matchId,
-                                                                                                        unlockedUntilOver
-                                                                                                    )
-                                                                                                }
-                                                                                            )
-                                                                                        }
-                                                                                    }
-                                                                                } else {
-                                                                                    unlockedUntilOver =
-                                                                                        entry.overNumber + 2
-                                                                                    RewardPrefs.setOversUnlockedUntil(
-                                                                                        context,
-                                                                                        matchId,
-                                                                                        unlockedUntilOver
-                                                                                    )
-                                                                                }
-                                                                            }
-                                                                        )
-                                                                    } else {
-                                                                        OverScorecardItem(entry)
                                                                     }
                                                                 }
                                                             }
                                                         }
 
-                                                        // Loading indicator when fetching older overs
-                                                        if (isPaginating) {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .fillMaxWidth()
-                                                                    .padding(16.dp),
-                                                                contentAlignment = Alignment.Center
-                                                            ) {
-                                                                CircularProgressIndicator(
-                                                                    color = if (isPremium) GoldPrimary else Color(
-                                                                        0xFF00BFA5
-                                                                    ),
-                                                                    modifier = Modifier.size(32.dp)
-                                                                )
+                                                        if (commentsData.commentary.isEmpty()) {
+                                                            Text(
+                                                                text = "No commentary available yet",
+                                                                color = TextGray,
+                                                                fontSize = 14.sp,
+                                                                fontFamily = GilroyFontFamily,
+                                                                modifier = Modifier.padding(24.dp)
+                                                            )
+                                                        } else {
+                                                            val commentaryList =
+                                                                commentsData.commentary
+                                                            val isPaginating by viewModel.isPaginatingComments.collectAsState()
+
+                                                            commentaryList.forEachIndexed { index, entry ->
+                                                                // Trigger pagination as user scrolls down
+                                                                if (index == commentaryList.size - 2) {
+                                                                    LaunchedEffect(index) {
+                                                                        viewModel.loadMoreComments()
+                                                                    }
+                                                                }
+
+                                                                when (entry) {
+                                                                    is CommentaryEntry.BallCommentary -> {
+                                                                        CommentaryItemFromApi(
+                                                                            entry,
+                                                                            matchData.players,
+                                                                            isPremium = isPremium
+                                                                        )
+                                                                    }
+
+                                                                    is CommentaryEntry.OverScorecard -> {
+
+                                                                        // 3. Overs Banner Ad - Before every 2 overs
+                                                                        if (!isPremium && entry.overNumber % 2 == 0 && adsState.overs_banner.enabled && adsState.overs_banner.ads_unit.isNotEmpty()) {
+                                                                            Box(
+                                                                                modifier = Modifier
+                                                                                    .fillMaxWidth()
+                                                                                    .padding(
+                                                                                        vertical = 16.dp
+                                                                                    )
+                                                                            ) {
+                                                                                BannerAdView(
+                                                                                    adUnitId = adsState.overs_banner.ads_unit,
+                                                                                    isPremium = isPremium
+                                                                                )
+                                                                            }
+                                                                        }
+
+
+                                                                        OverScorecardItem(
+                                                                            entry,
+                                                                            isPremium = isPremium
+                                                                        )
+                                                                    }
+                                                                }
+
+                                                            }
+
+                                                            // Loading indicator when fetching older overs
+                                                            if (isPaginating) {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .fillMaxWidth()
+                                                                        .padding(16.dp),
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    CircularProgressIndicator(
+                                                                        color = if (isPremium) GoldPrimary else Color(
+                                                                            0xFF00BFA5
+                                                                        ),
+                                                                        modifier = Modifier.size(32.dp)
+                                                                    )
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -957,18 +945,26 @@ fun MatchDetailsScreen(
                             }
                         }
                     }
+                }else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = if (isPremium) GoldPrimary else Color(0xFF00BFA5)
+                        )
+                    }
                 }
             }
         }
     }
-
-
 // Show Player Profile as an overlay
     selectedPlayerProfile?.let { player ->
         Box(modifier = Modifier.fillMaxSize()) {
             PlayerProfileScreen(
                 player = player,
-                onBack = { selectedPlayerProfile = null }
+                onBack = { selectedPlayerProfile = null },
+                isPremium = isPremium
             )
         }
     }
@@ -986,25 +982,32 @@ fun MatchDetailsScreen(
     if (showRewardPolicyDialog) {
         RewardPolicyDialog(
             onAccept = {
-                RewardPrefs.setPolicyAccepted(context, true)
+                RewardPrefs.setMatchDetailsPolicyAccepted(context, true)
                 showRewardPolicyDialog = false
-                val rewardConfig =
-                    if (rewardPendingOver != null) adsState.reward_live else adsState.reward_ai
-                if (activity != null && rewardConfig.enabled && rewardConfig.ads_unit.isNotEmpty()) {
+
+                val rewardConfig = adsState.reward_live
+
+                if (activity != null && rewardConfig.enabled) {
                     AdRewardManager.showAd(
                         activity = activity,
                         adUnitId = rewardConfig.ads_unit,
                         isPremium = isPremium,
                         onRewardEarned = {
-                            if (rewardPendingOver != null) {
-                                unlockedUntilOver = rewardPendingOver!! + 2
-                                RewardPrefs.setOversUnlockedUntil(
-                                    context,
-                                    matchId,
-                                    unlockedUntilOver
-                                )
-                                rewardPendingOver = null
-                            }
+                            val currentOver =
+                                matchDetailsState.let {
+                                    (it as? MatchDetailsState.Success)?.matchData?.innings
+                                        ?.lastOrNull()?.oversBowled?.toDoubleOrNull()?.toInt()
+                                } ?: 0
+
+                            unlockedUntilOver = maxOf(unlockedUntilOver, currentOver) + 2
+
+                            RewardPrefs.setOversUnlockedUntil(
+                                context,
+                                matchId,
+                                unlockedUntilOver
+                            )
+
+                            isScreenUnlocked = true
                         }
                     )
                 }
@@ -1030,86 +1033,44 @@ fun MatchDetailsScreen(
         )
     }
 
-    if (showFantasyInfoDialog) {
+    if (showTeamsNotAnnouncedDialog) {
         AlertDialog(
-            onDismissRequest = { showFantasyInfoDialog = false },
+            onDismissRequest = { showTeamsNotAnnouncedDialog = false },
             title = {
                 Text(
-                    "Fantasy Team Availability",
+                    "Teams Not Announced",
                     fontWeight = FontWeight.Bold,
-                    color = if (isPremium) GoldPrimary else Color.White
+                    color = GoldPrimary
                 )
             },
             text = {
                 Text(
-                    "Fantasy team will be available 20 minutes before the match starts.",
-                    color = if (isPremium) GoldPrimary.copy(alpha = 0.8f) else Color.White.copy(
-                        alpha = 0.7f
-                    )
+                    "Fun Fantasy Team will be available once the match is live and both teams have announced their starting XI (22 players).",
+                    color = GoldPrimary.copy(alpha = 0.8f)
                 )
             },
             confirmButton = {
-                TextButton(onClick = { showFantasyInfoDialog = false }) {
-                    Text("OK", color = if (isPremium) GoldPrimary else Color(0xFF00BFA5))
+                TextButton(onClick = { showTeamsNotAnnouncedDialog = false }) {
+                    Text("OK", color = GoldPrimary)
                 }
             },
-            containerColor = if (isPremium) Color(0xFF1A1A10) else Color(0xFF1C1C1E),
+            containerColor = Color(0xFF1A1A10),
             shape = RoundedCornerShape(16.dp)
         )
     }
 }
 
+
 @Composable
 fun FunFantasyTeamButton(
     matchData: MatchDetailsData,
-    isPremium: Boolean,
+    isPremium: Boolean, // ✅ ADD THIS
     onFantasyClick: () -> Unit,
+    onPurchaseClick: () -> Unit, // ✅ ADD THIS
     onInfoClick: () -> Unit,
-    onPurchaseClick: () -> Unit,
 ) {
-    var timeLeft by remember { mutableLongStateOf(0L) }
-    var isWithinTime by remember { mutableStateOf(false) }
-
-    LaunchedEffect(matchData.startDateTime) {
-        while (true) {
-            try {
-                // MatchDetailsData startDateTime is already converted to local string
-                // We need to parse it back to compare. 
-                // Alternatively, use current system time and match details time.
-                // Assuming startDateTime is like "17 Mar, 11:45 AM"
-                val dateFormat = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
-                val startDate = dateFormat.parse(matchData.startDateTime)
-                if (startDate != null) {
-                    val startMillis = startDate.time
-                    // Note: This parsing might lose year info. A better approach is having raw epoch in data model.
-                    // For now, let's assume it works or the match is recent.
-
-                    // Since year is missing, we add current year if needed
-                    val cal = Calendar.getInstance()
-                    val matchCal = Calendar.getInstance()
-                    matchCal.time = startDate
-                    matchCal.set(Calendar.YEAR, cal.get(Calendar.YEAR))
-
-                    val now = System.currentTimeMillis()
-                    val diff = matchCal.timeInMillis - now
-                    timeLeft = diff
-
-                    // Within 20 minutes before start (1,200,000 ms) OR match is Live/InProgress
-                    isWithinTime =
-                        diff <= 20 * 60 * 1000 || matchData.isLive || matchData.isInProgress
-                }
-            } catch (e: Exception) {
-                isWithinTime = true // Fallback to always allow if parsing fails
-            }
-            delay(1000)
-        }
-    }
-
-    val timerText = if (timeLeft > 0 && !isWithinTime) {
-        val min = (timeLeft / (1000 * 60)) % 60
-        val sec = (timeLeft / 1000) % 60
-        String.format("%02d:%02d", min, sec)
-    } else ""
+    val isTeamsAnnounced = matchData.players.size == 22
+    val isLive = matchData.isLive || matchData.isInProgress
 
     Column(
         modifier = Modifier
@@ -1119,12 +1080,10 @@ fun FunFantasyTeamButton(
     ) {
         Button(
             onClick = {
-                if (isWithinTime) {
-                    if (isPremium) {
-                        onFantasyClick()
-                    } else {
-                        onPurchaseClick()
-                    }
+                if (!isPremium) {
+                    onPurchaseClick()
+                } else if (isLive && isTeamsAnnounced) {
+                    onFantasyClick()
                 } else {
                     onInfoClick()
                 }
@@ -1133,10 +1092,9 @@ fun FunFantasyTeamButton(
                 .fillMaxWidth()
                 .height(56.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (isPremium) GoldPrimary else Color(0xFF2C2C2E)
+                containerColor = GoldPrimary
             ),
             shape = RoundedCornerShape(28.dp),
-            border = if (!isPremium) BorderStroke(1.dp, GoldPrimary) else null,
             elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp)
         ) {
             Row(
@@ -1144,41 +1102,24 @@ fun FunFantasyTeamButton(
                 horizontalArrangement = Arrangement.Center
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_purchase), // Using same star icon for premium feel
+                    painter = painterResource(id = R.drawable.ic_purchase),
                     contentDescription = null,
                     modifier = Modifier.size(24.dp),
-                    tint = if (isPremium) Color.Black else GoldPrimary
+                    tint = Color.Black
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    "Fun Fantasy Team",
-                    color = if (isPremium) Color.Black else GoldPrimary,
+                    "AI Fantasy Team",
+                    color = Color.Black,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = GilroyFontFamily
                 )
-                if (timerText.isNotEmpty()) {
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        timerText,
-                        color = if (isPremium) Color.Black.copy(0.7f) else GoldPrimary.copy(0.7f),
-                        fontSize = 14.sp,
-                        fontFamily = GilroyFontFamily
-                    )
-                }
-                if (!isPremium) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_menu),
-                        contentDescription = "Locked",
-                        modifier = Modifier.size(16.dp),
-                        tint = GoldPrimary
-                    )
-                }
             }
         }
     }
 }
+
 
 @Composable
 fun FantasyTeamDialog(
@@ -1186,144 +1127,136 @@ fun FantasyTeamDialog(
     isPremium: Boolean,
     onDismiss: () -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss) {
+    var isError by remember { mutableStateOf(false) }
+    Dialog(
+        onDismissRequest = {
+            if (players.isNotEmpty() || isError) {
+                onDismiss()
+            }
+        }
+    ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.8f),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = if (isPremium) Color(0xFF1A1A10) else DarkBackground),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A10)),
             border = BorderStroke(2.dp, GoldPrimary)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(GoldPrimary)
                         .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        "Your Fun Fantasy XI",
-                        color = Color.Black,
+                        "AI Fun Fantasy XI",
+                        color = Color.White,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = GilroyFontFamily
                     )
                 }
-
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(players.size) { index ->
-                        val player = players[index]
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color.White.copy(0.05f), RoundedCornerShape(12.dp))
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(modifier = Modifier.size(50.dp)) {
-                                AsyncImage(
-                                    model = player.imageUrl,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(CircleShape),
-                                    contentScale = ContentScale.Crop,
-                                    error = painterResource(id = R.drawable.ic_launcher_foreground)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    player.name,
-                                    color = Color.White,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = GilroyFontFamily
-                                )
-                                Text(
-                                    player.role,
-                                    color = TextGray,
-                                    fontSize = 12.sp,
-                                    fontFamily = GilroyFontFamily
-                                )
-                            }
-                            // Highlight index
+                if (players.isEmpty() && !isError) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = GoldPrimary)
+                            Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                "#${index + 1}",
+                                "AI is selecting best 11 players...",
                                 color = GoldPrimary,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Black
+                                fontFamily = GilroyFontFamily
                             )
                         }
                     }
-                }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(players.size) { index ->
+                            val player = players[index]
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.White.copy(0.05f), RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        player.name,
+                                        color = Color.White,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = GilroyFontFamily
+                                    )
+                                    Text(
+                                        player.role,
+                                        color = TextGray,
+                                        fontSize = 12.sp,
+                                        fontFamily = GilroyFontFamily
+                                    )
+                                }
 
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Close", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "#${index + 1}",
+                                    color = GoldPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Close", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
     }
-}
+    if (isError) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
-@Composable
-fun LockedOverItem(overNumber: Int, onUnlockClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-            .clickable { onUnlockClick() },
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1E).copy(alpha = 0.5f)),
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(24.dp)
-                .fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text("🔒", fontSize = 24.sp)
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Over $overNumber is locked",
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "Watch a short ad to unlock next 2 overs",
-                color = TextGray,
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = onUnlockClick,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00BFA5)),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.height(36.dp)
-            ) {
                 Text(
-                    "Unlock Now",
-                    color = Color.Black,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
+                    "Failed to generate team",
+                    color = Color.Red,
+                    fontSize = 14.sp,
+                    fontFamily = GilroyFontFamily
                 )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+
+                    Button(
+                        onClick = {
+                            isError = false
+                            // call retry logic (same as generateFantasyTeam)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
+                    ) {
+                        Text("Retry", color = Color.Black)
+                    }
+
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
+                    ) {
+                        Text("Close", color = Color.White)
+                    }
+                }
             }
         }
     }
@@ -1349,7 +1282,7 @@ fun DetailScoreCard(
                 .fillMaxWidth()
                 .border(
                     2.dp,
-                    if (isPremium) GoldPrimary.copy(0.3f) else Color(0xFF2C2C2E),
+                    Color(0xFF2C2C2E),
                     RoundedCornerShape(24.dp)
                 ),
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -1360,10 +1293,7 @@ fun DetailScoreCard(
                     .fillMaxWidth()
                     .background(
                         brush = Brush.verticalGradient(
-                            colors = if (isPremium) listOf(
-                                Color(0xFF2A2A1A),
-                                Color.Black
-                            ) else listOf(CardBackground, Color.Black.copy(alpha = 0.5f))
+                            colors = listOf(CardBackground, Color.Black.copy(alpha = 0.5f))
                         )
                     )
             ) {
@@ -1377,7 +1307,7 @@ fun DetailScoreCard(
                 ) {
                     Text(
                         matchData.competition.name,
-                        color = if (isPremium) GoldPrimary.copy(0.7f) else TextGray,
+                        color = TextGray,
                         fontSize = 13.sp,
                         fontFamily = GilroyFontFamily,
                         modifier = Modifier.padding(bottom = 10.dp)
@@ -1424,7 +1354,7 @@ fun DetailScoreCard(
                         val crr = matchData.innings.lastOrNull()?.currentRunRate ?: 0.0
                         Text(
                             "CRR : $crr",
-                            color = if (isPremium) GoldPrimary.copy(0.8f) else Color.White.copy(
+                            color = Color.White.copy(
                                 alpha = 0.7f
                             ),
                             fontSize = 13.sp,
@@ -1435,7 +1365,7 @@ fun DetailScoreCard(
                         if (rrr != null) {
                             Text(
                                 "RRR : $rrr",
-                                color = if (isPremium) GoldPrimary.copy(0.8f) else Color.White.copy(
+                                color = Color.White.copy(
                                     alpha = 0.7f
                                 ),
                                 fontSize = 13.sp,
@@ -1456,7 +1386,8 @@ fun DetailScoreCard(
                             ?.let { (it.toInt() * 6) + ((it % 1) * 10).toInt() } ?: 0
                         val ballsRem = totalBalls - usedBalls
                         if (needs > 0) {
-                            val battingTeam = matchData.getBattingTeam(inning2)?.shortName ?: "Team"
+                            val battingTeam =
+                                matchData.getBattingTeam(inning2)?.shortName ?: "Team"
                             "$battingTeam need $needs runs in $ballsRem balls"
                         } else {
                             matchData.resultText ?: "Match in progress"
@@ -1474,7 +1405,7 @@ fun DetailScoreCard(
                 if (statusText.isNotEmpty()) {
                     Surface(
                         modifier = Modifier.align(Alignment.BottomCenter),
-                        color = if (isPremium) GoldPrimary else Color(0xFF2C2C2E),
+                        color = Color(0xFF2C2C2E),
                         shape = RoundedCornerShape(
                             topStart = 12.dp,
                             topEnd = 12.dp,
@@ -1484,11 +1415,11 @@ fun DetailScoreCard(
                     ) {
                         Text(
                             statusText,
-                            color = if (isPremium) Color.Black else Color.White.copy(alpha = 0.9f),
+                            color = Color.White.copy(alpha = 0.9f),
                             fontSize = 11.sp,
                             fontFamily = GilroyFontFamily,
                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
-                            fontWeight = if (isPremium) FontWeight.Bold else FontWeight.Normal
+                            fontWeight = FontWeight.Normal
                         )
                     }
                 }
@@ -1523,7 +1454,7 @@ fun ScoreRowDetail(
             Spacer(modifier = Modifier.width(14.dp))
             Text(
                 text = name,
-                color = if (isPremium) GoldPrimary else Color.White,
+                color = Color.White,
                 fontSize = 17.sp,
                 fontFamily = GilroyFontFamily,
                 fontWeight = FontWeight.Medium,
@@ -1534,7 +1465,7 @@ fun ScoreRowDetail(
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = score,
-                color = if (isPremium) GoldPrimary else Color.White,
+                color = Color.White,
                 fontSize = 22.sp,
                 fontFamily = GilroyFontFamily,
                 fontWeight = FontWeight.Bold
@@ -1542,7 +1473,7 @@ fun ScoreRowDetail(
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = if (overs == "0.0" || overs.isEmpty()) "(0)" else overs,
-                color = if (isPremium) GoldPrimary.copy(0.6f) else TextGray,
+                color = TextGray,
                 fontFamily = GilroyFontFamily,
                 fontSize = 14.sp,
                 modifier = Modifier.padding(bottom = 2.dp)
@@ -1582,7 +1513,7 @@ fun PlayerPerformanceCard(
                 .fillMaxWidth()
                 .border(
                     2.dp,
-                    if (isPremium) GoldPrimary.copy(0.3f) else Color(0xFF2C2C2E),
+                    Color(0xFF2C2C2E),
                     RoundedCornerShape(24.dp)
                 ),
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -1593,10 +1524,7 @@ fun PlayerPerformanceCard(
                     .fillMaxWidth()
                     .background(
                         brush = Brush.verticalGradient(
-                            colors = if (isPremium) listOf(
-                                Color(0xFF2A2A1A),
-                                Color.Black
-                            ) else listOf(
+                            colors = listOf(
                                 CardBackground,
                                 Color.Black.copy(alpha = 0.4f),
                                 Color.Black.copy(alpha = 0.8f)
@@ -1633,7 +1561,7 @@ fun PlayerPerformanceCard(
                             .width(1.dp)
                             .height(50.dp)
                             .background(
-                                if (isPremium) GoldPrimary.copy(0.1f) else Color.White.copy(
+                                Color.White.copy(
                                     0.05f
                                 )
                             )
@@ -1661,7 +1589,7 @@ fun PlayerPerformanceCard(
                             .width(1.dp)
                             .height(50.dp)
                             .background(
-                                if (isPremium) GoldPrimary.copy(0.1f) else Color.White.copy(
+                                Color.White.copy(
                                     0.05f
                                 )
                             )
@@ -1693,7 +1621,7 @@ fun PlayerPerformanceCard(
 
                 Surface(
                     modifier = Modifier.align(Alignment.BottomCenter),
-                    color = if (isPremium) GoldPrimary else Color(0xFF2C2C2E),
+                    color = Color(0xFF2C2C2E),
                     shape = RoundedCornerShape(
                         topStart = 12.dp,
                         topEnd = 12.dp,
@@ -1703,11 +1631,11 @@ fun PlayerPerformanceCard(
                 ) {
                     Text(
                         badgeText,
-                        color = if (isPremium) Color.Black else Color.White.copy(alpha = 0.9f),
+                        color = Color.White.copy(alpha = 0.9f),
                         fontSize = 11.sp,
                         fontFamily = GilroyFontFamily,
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
-                        fontWeight = if (isPremium) FontWeight.Bold else FontWeight.Normal
+                        fontWeight = FontWeight.Normal
                     )
                 }
             }
@@ -1789,7 +1717,7 @@ fun PlayerInfo(
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             name,
-            color = if (isPremium) GoldPrimary else Color.White,
+            color = Color.White,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = GilroyFontFamily,
@@ -1799,7 +1727,7 @@ fun PlayerInfo(
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.Center) {
             Text(
                 score,
-                color = if (isPremium) GoldPrimary else Color.White,
+                color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = GilroyFontFamily
@@ -1807,7 +1735,7 @@ fun PlayerInfo(
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 detail,
-                color = if (isPremium) GoldPrimary.copy(alpha = 0.6f) else TextGray,
+                color = TextGray,
                 fontSize = 10.sp,
                 fontFamily = GilroyFontFamily,
                 modifier = Modifier.padding(bottom = 1.dp)
@@ -1827,9 +1755,11 @@ fun RecentOverStats(recentOvers: List<OverSummary>) {
         }
     }
 
-    Column(modifier = Modifier
-        .fillMaxWidth()
-        .padding(vertical = 12.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp)
+    ) {
         Text(
             text = "Recent Balls",
             color = Color.White.copy(alpha = 0.7f),
@@ -1939,9 +1869,7 @@ fun DetailTabs(
             ) {
                 Text(
                     text = title,
-                    color = if (isSelected) (if (isPremium) GoldPrimary else Color(0xFF00BFA5)) else (if (isPremium) GoldPrimary.copy(
-                        0.5f
-                    ) else Color.White),
+                    color = (if (isPremium) GoldPrimary else Color(0xFF00BFA5)),
                     fontSize = 16.sp,
                     fontFamily = GilroyFontFamily,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
@@ -1991,13 +1919,13 @@ fun FieldPlayerItem(player: Player, isPremium: Boolean = false, onPlayerClick: (
                 )
             }
             Surface(
-                color = if (isPremium) GoldPrimary else Color.Black,
+                color = Color.Black,
                 shape = RoundedCornerShape(2.dp),
                 modifier = Modifier.offset(y = 2.dp)
             ) {
                 Text(
                     text = player.name,
-                    color = if (isPremium) Color.Black else Color.White,
+                    color = Color.White,
                     fontSize = 8.sp,
                     fontFamily = GilroyFontFamily,
                     fontWeight = FontWeight.Bold,
@@ -2026,13 +1954,13 @@ fun SquadView(
     ) {
         // Dark title box attached to top of field
         Surface(
-            color = if (isPremium) Color(0xFF2A2A1A) else Color(0xFF1E1E1E),
+            color = Color(0xFF1E1E1E),
             shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
             modifier = Modifier.width(240.dp) // Narrower title box like in screenshot
         ) {
             Text(
                 text = teamName,
-                color = if (isPremium) GoldPrimary else Color.White,
+                color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 fontFamily = GilroyFontFamily,
@@ -2100,7 +2028,7 @@ fun MatchInfoTable(info: MatchInfo?, isPremium: Boolean = false) {
     ) {
         Text(
             text = "Match Info",
-            color = if (isPremium) GoldPrimary else Color.White,
+            color = Color.White,
             fontSize = 18.sp,
             fontFamily = GilroyFontFamily,
             fontWeight = FontWeight.Bold
@@ -2124,14 +2052,14 @@ fun InfoRow(label: String, value: String, isPremium: Boolean = false) {
     ) {
         Text(
             text = label,
-            color = if (isPremium) GoldPrimary.copy(alpha = 0.6f) else TextGray,
+            color = TextGray,
             fontSize = 13.sp,
             fontFamily = GilroyFontFamily,
             modifier = Modifier.width(100.dp)
         )
         Text(
             text = value,
-            color = if (isPremium) GoldPrimary else Color.White,
+            color = Color.White,
             fontSize = 13.sp,
             fontFamily = GilroyFontFamily,
             textAlign = TextAlign.End,
@@ -2144,6 +2072,7 @@ fun InfoRow(label: String, value: String, isPremium: Boolean = false) {
 fun CommentaryItemFromApi(
     ball: CommentaryEntry.BallCommentary,
     players: List<PlayerDetail> = emptyList(),
+    isPremium: Boolean = false,
 ) {
     var isExpanded by remember { mutableStateOf(false) }
 
@@ -2234,7 +2163,7 @@ fun CommentaryItemFromApi(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = if (isExpanded) "👇 Hide Shot View" else "👉 Shot View (360°)",
-                        color = Color(0xFF00BFA5),
+                        color = if (isPremium) GoldPrimary else Color(0xFF00BFA5),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = GilroyFontFamily
@@ -2541,7 +2470,7 @@ fun ShotViewCanvas(
 }
 
 @Composable
-fun OverScorecardItem(entry: CommentaryEntry.OverScorecard) {
+fun OverScorecardItem(entry: CommentaryEntry.OverScorecard, isPremium: Boolean = false) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -2557,7 +2486,7 @@ fun OverScorecardItem(entry: CommentaryEntry.OverScorecard) {
             ) {
                 Text(
                     text = "End of Over ${entry.overNumber}",
-                    color = Color(0xFF00BFA5),
+                    color = if (isPremium) GoldPrimary else Color(0xFF00BFA5),
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     fontFamily = GilroyFontFamily

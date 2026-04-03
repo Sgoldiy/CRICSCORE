@@ -29,3 +29,12 @@
 # Android UI
 -keep class com.cricpeak.scorelive.** { *; }
 -dontwarn com.cricpeak.scorelive.**
+
+# iZooto SDK
+-keep class com.izooto.** { *; }
+-dontwarn com.izooto.**
+
+# iZooto optional dependencies (Glide, Google Identity, Huawei AGConnect)
+-dontwarn com.bumptech.glide.**
+-dontwarn com.google.android.libraries.identity.googleid.**
+-dontwarn com.huawei.agconnect.**

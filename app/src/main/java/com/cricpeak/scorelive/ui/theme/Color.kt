@@ -4,6 +4,10 @@ import androidx.compose.ui.graphics.Color
 
 val DarkBackground = Color(0xFF0A0A0F)
 val RadialTeal = Color(0x4d00826b)
+
+val RadialGold = Color(0x4dFFD700)
+
+
 val RadialDark = Color(0xFF131313)
 val CardBackground = Color(0x66141510)
 val AccentGreen = Color(0xFF1DA132)

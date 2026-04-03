@@ -21,6 +21,11 @@ data class GeminiPredictionResult(
     val predictedWinner: String
 )
 
+@Serializable
+data class FantasyTeamResult(
+    val team: List<String> // 11 player names
+)
+
 class GeminiPredictionService {
 
     // Fallback values in case Firebase fetch fails
@@ -108,6 +113,53 @@ class GeminiPredictionService {
                 else -> e.localizedMessage ?: "Unknown AI error"
             }
             Result.failure(Exception(errorMessage))
+        }
+    }
+
+    suspend fun getFantasyTeam(allPlayerNames: List<String>): Result<List<String>> = withContext(Dispatchers.IO) {
+        updateConfigFromFirebase()
+
+        if (currentApiKey.isEmpty() || currentApiKey.startsWith("YOUR")) {
+            return@withContext Result.failure(Exception("API Key not configured."))
+        }
+
+        val model = GenerativeModel(
+            modelName = currentModelName,
+            apiKey = currentApiKey,
+            generationConfig = generationConfig {
+                responseMimeType = "application/json"
+            }
+        )
+
+        val prompt = """
+            You are a cricket expert. Given the following list of 22 players (11 from each team), 
+            select the best possible Fantasy 11 team (total 11 players).
+            Ensure a balanced team (typically 1-2 Wicketkeepers, 3-5 Batsmen, 1-3 All-rounders, 3-5 Bowlers).
+            
+            Players:
+            ${allPlayerNames.joinToString(", ")}
+            
+            Return a JSON object with:
+            {
+              "team": ["Player Name 1", "Player Name 2", ..., "Player Name 11"]
+            }
+        """.trimIndent()
+
+        try {
+            val response = model.generateContent(prompt)
+            val responseText = response.text ?: return@withContext Result.failure(Exception("Empty response"))
+
+            val cleanedJson = responseText.trim()
+                .removePrefix("```json")
+                .removeSuffix("```")
+                .trim()
+
+            val result = json.decodeFromString<FantasyTeamResult>(cleanedJson)
+            Result.success(result.team)
+
+        } catch (e: Exception) {
+            Log.e("GeminiService", "Fantasy Team Error: ${e.message}")
+            Result.failure(e)
         }
     }
 

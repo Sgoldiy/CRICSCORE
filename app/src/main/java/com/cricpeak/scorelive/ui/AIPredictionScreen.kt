@@ -1,7 +1,21 @@
 package com.cricpeak.scorelive.ui
 
-import androidx.compose.foundation.*
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,11 +23,26 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -28,7 +57,12 @@ import com.cricpeak.scorelive.billing.BillingViewModel
 import com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsData
 import com.cricpeak.scorelive.ui.apicallfiles.MatchDetailsViewModel
 import com.cricpeak.scorelive.ui.apicallfiles.PredictionState
-import com.cricpeak.scorelive.ui.theme.*
+import com.cricpeak.scorelive.ui.theme.AccentGreen
+import com.cricpeak.scorelive.ui.theme.DarkBackground
+import com.cricpeak.scorelive.ui.theme.GilroyFontFamily
+import com.cricpeak.scorelive.ui.theme.GoldPrimary
+import com.cricpeak.scorelive.ui.theme.RadialGold
+import com.cricpeak.scorelive.ui.theme.RadialTeal
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,7 +71,7 @@ fun AIPredictionScreen(
     onBackClick: () -> Unit,
     viewModel: MatchDetailsViewModel = viewModel(),
     billingViewModel: BillingViewModel = viewModel(),
-    onPurchaseClick: () -> Unit = {}
+    onPurchaseClick: () -> Unit = {},
 ) {
     val matchDetails = viewModel.matchDetails.collectAsState().value
     val predictionState = viewModel.predictionState.collectAsState().value
@@ -46,6 +80,19 @@ fun AIPredictionScreen(
     LaunchedEffect(matchId) {
         viewModel.loadMatchDetails(matchId)
     }
+
+    val goldGradient = Brush.radialGradient(
+        colors = listOf(
+            RadialGold.copy(alpha = 0.25f),
+            Color.Transparent
+        ),
+        center = Offset(540f, -50f),
+        radius = 1000f
+    )
+
+    val radialTealGradient = Brush.verticalGradient(
+        colors = listOf(RadialTeal.copy(alpha = 0.2f), Color.Transparent)
+    )
 
     Scaffold(
         containerColor = DarkBackground,
@@ -76,16 +123,12 @@ fun AIPredictionScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(RadialTeal.copy(alpha = 0.2f), Color.Transparent)
-                    )
-                )
+                .background(if (isPremium) goldGradient else radialTealGradient)
         ) {
             val data = matchDetails
             if (data == null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = AccentGreen)
+                    CircularProgressIndicator(color = if (isPremium) GoldPrimary else AccentGreen)
                 }
             } else {
                 LazyColumn(
@@ -95,57 +138,50 @@ fun AIPredictionScreen(
                 ) {
                     // 1. Two Team Logos & Winning Chance
                     item {
-                        WinningChanceSection(data, predictionState)
+                        WinningChanceSection(data, predictionState, isPremium)
+                    }
+                    // 2. Summary (Analysis)
+                    item {
+                        Spacer(modifier = Modifier.height(32.dp))
+                        SummarySection(predictionState)
                     }
 
-                    if (isPremium) {
-                        // 2. Summary (Analysis)
-                        item {
-                            Spacer(modifier = Modifier.height(32.dp))
-                            SummarySection(predictionState)
-                        }
+                    // 3. 5 Players from each side
+                    item {
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Text(
+                            "KEY PLAYERS TO WATCH",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = GilroyFontFamily,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp)
+                        )
+                        PlayersGridSimplified(predictionState)
+                    }
 
-                        // 3. 5 Players from each side
-                        item {
-                            Spacer(modifier = Modifier.height(32.dp))
-                            Text(
-                                "KEY PLAYERS TO WATCH",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = GilroyFontFamily,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 16.dp)
-                            )
-                            PlayersGridSimplified(predictionState)
-                        }
-
-                        // 4. AI Disclaimer
-                        item {
-                            Spacer(modifier = Modifier.height(40.dp))
-                            Text(
-                                text = "Content is generated by AI",
-                                color = Color.White.copy(alpha = 0.3f),
-                                fontSize = 12.sp,
-                                fontFamily = GilroyFontFamily,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 16.dp)
-                            )
-                        }
-                    } else {
-                        item {
-                            Spacer(modifier = Modifier.height(64.dp))
-                            PremiumLockOverlay(onPurchaseClick)
-                        }
+                    // 4. AI Disclaimer
+                    item {
+                        Spacer(modifier = Modifier.height(40.dp))
+                        Text(
+                            text = "Content is generated by AI",
+                            color = Color.White.copy(alpha = 0.3f),
+                            fontSize = 12.sp,
+                            fontFamily = GilroyFontFamily,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp)
+                        )
                     }
                 }
             }
         }
     }
 }
+
 
 @Composable
 fun PremiumLockOverlay(onPurchaseClick: () -> Unit) {
@@ -198,7 +234,11 @@ fun PremiumLockOverlay(onPurchaseClick: () -> Unit) {
 }
 
 @Composable
-fun WinningChanceSection(data: MatchDetailsData, state: PredictionState) {
+fun WinningChanceSection(
+    data: MatchDetailsData,
+    state: PredictionState,
+    isPremium: Boolean = false,
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         // VS Section with Logos
         Row(
@@ -219,7 +259,7 @@ fun WinningChanceSection(data: MatchDetailsData, state: PredictionState) {
 
             Text(
                 "VS",
-                color = AccentGreen.copy(alpha = 0.5f),
+                color = if (isPremium) GoldPrimary.copy(alpha = 0.5f) else AccentGreen.copy(alpha = 0.5f),
                 fontWeight = FontWeight.Black,
                 fontSize = 24.sp,
                 fontFamily = GilroyFontFamily
@@ -263,7 +303,7 @@ fun WinningChanceSection(data: MatchDetailsData, state: PredictionState) {
                     )
                     Text(
                         "${result.homeWinProb}%",
-                        color = AccentGreen,
+                        color = if (isPremium) GoldPrimary else AccentGreen,
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = GilroyFontFamily
@@ -308,7 +348,7 @@ fun WinningChanceSection(data: MatchDetailsData, state: PredictionState) {
                         modifier = Modifier
                             .fillMaxHeight()
                             .weight(result.homeWinProb.toFloat().coerceAtLeast(1f))
-                            .background(AccentGreen)
+                            .background(if (isPremium) GoldPrimary else AccentGreen)
                     )
                     Box(
                         modifier = Modifier
@@ -324,7 +364,7 @@ fun WinningChanceSection(data: MatchDetailsData, state: PredictionState) {
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(CircleShape),
-                color = AccentGreen,
+                color = if (isPremium) GoldPrimary else AccentGreen,
                 trackColor = Color.White.copy(0.05f)
             )
         }
@@ -356,7 +396,7 @@ fun SummarySection(state: PredictionState) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(
                 "AI TACTICAL SUMMARY",
-                color = AccentGreen,
+                color = GoldPrimary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
@@ -384,9 +424,10 @@ fun SummarySection(state: PredictionState) {
 
                 is PredictionState.Error -> {
                     Text(
-                        "Summary unavailable: ${state.message}",
+                        "AI is not responding right now. Please try again later.",
                         color = Color.Red.copy(0.7f),
-                        fontSize = 14.sp
+                        fontSize = 14.sp,
+                        fontFamily = GilroyFontFamily
                     )
                 }
 
@@ -445,7 +486,7 @@ fun SimplePlayerRow(name: String, isRight: Boolean) {
             Icon(
                 imageVector = Icons.Default.Person,
                 contentDescription = null,
-                tint = AccentGreen,
+                tint = GoldPrimary,
                 modifier = Modifier
                     .size(16.dp)
                     .clip(CircleShape)

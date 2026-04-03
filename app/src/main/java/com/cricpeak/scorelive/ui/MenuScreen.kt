@@ -1,7 +1,6 @@
 package com.cricpeak.scorelive.ui
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.background
@@ -31,6 +30,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -48,26 +48,38 @@ import com.cricpeak.scorelive.ui.theme.TextGray
 import androidx.core.net.toUri
 import com.cricpeak.scorelive.ads.AdsState
 import com.cricpeak.scorelive.ads.BannerAdView
+import com.cricpeak.scorelive.ui.theme.RadialGold
+import com.cricpeak.scorelive.ui.theme.GoldPrimary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MenuScreen(
-    onBack: () -> Unit, 
+    onBack: () -> Unit,
     onPrivacyPolicyClick: () -> Unit,
     onUninstallClick: () -> Unit,
     isPremium: Boolean = false,
-    adsState: AdsState? = null
+    adsState: AdsState? = null,
 ) {
     val context = LocalContext.current
     val radialGradient = Brush.radialGradient(
         colors = listOf(RadialTeal.copy(alpha = 0.5f), Color.Transparent),
-        center = androidx.compose.ui.geometry.Offset(540f, -50f),
+        center = Offset(540f, -50f),
+        radius = 1000f
+    )
+
+    val goldGradient = Brush.radialGradient(
+        colors = listOf(
+            RadialGold.copy(alpha = 0.25f),
+            Color.Transparent
+        ),
+        center = Offset(540f, -50f),
         radius = 1000f
     )
 
     val menuItems = listOf(
         MenuItem("Rate Us", Icons.Default.Star) {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${context.packageName}"))
+            val intent = Intent(Intent.ACTION_VIEW,
+                "market://details?id=${context.packageName}".toUri())
             context.startActivity(intent)
         },
         MenuItem("Share App", Icons.Default.Share) {
@@ -135,7 +147,7 @@ fun MenuScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(350.dp)
-                    .background(radialGradient)
+                    .background(if (isPremium) goldGradient else radialGradient)
             )
 
             LazyColumn(
@@ -147,7 +159,7 @@ fun MenuScreen(
                 contentPadding = PaddingValues(top = 20.dp, bottom = if (adsState?.menu_banner?.enabled == true && adsState.menu_banner.ads_unit.isNotEmpty() && !isPremium) 16.dp else 40.dp)
             ) {
                 items(menuItems) { item ->
-                    MenuListItem(item)
+                    MenuListItem(item, isPremium)
                 }
                 
                 // 2. Menu Banner Ad - At the bottom of menu screen (above navigation bar)
@@ -169,7 +181,7 @@ fun MenuScreen(
 }
 
 @Composable
-fun MenuListItem(item: MenuItem) {
+fun MenuListItem(item: MenuItem, isPremium: Boolean = false) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -186,7 +198,7 @@ fun MenuListItem(item: MenuItem) {
             Icon(
                 imageVector = item.icon,
                 contentDescription = null,
-                tint = AccentGreen,
+                tint = if (isPremium) GoldPrimary else AccentGreen,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))

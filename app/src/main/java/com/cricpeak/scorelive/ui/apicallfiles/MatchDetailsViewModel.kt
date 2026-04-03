@@ -543,29 +543,50 @@ class MatchDetailsViewModel(
     }
 
     fun generateFantasyTeam(players: List<PlayerDetail>, homeTeamId: Int, awayTeamId: Int) {
-        viewModelScope.launch {
-            val homePlayers = players.filter { it.teamId == homeTeamId }
-            val awayPlayers = players.filter { it.teamId == awayTeamId }
-            
-            if (homePlayers.isEmpty() || awayPlayers.isEmpty()) return@launch
+        if (players.size != 22) {
+            // Signal that teams are not fully announced or data is incomplete
+            return
+        }
 
-            // Logic: 11 players total. Min 4, Max 7 from each team.
-            val homeCount = Random.nextInt(4, 8)
-            val awayCount = 11 - homeCount
+        viewModelScope.launch {
+            _fantasyTeam.value = emptyList() // Use empty list to signal "Loading" in UI
             
-            val selectedHome = homePlayers.shuffled().take(homeCount)
-            val selectedAway = awayPlayers.shuffled().take(awayCount)
+            val playerNames = players.map { it.displayName }
+            val result = geminiService.getFantasyTeam(playerNames)
             
-            _fantasyTeam.value = (selectedHome + selectedAway).shuffled().map { p ->
-                Player(
-                    id = p.id,
-                    name = p.displayName,
-                    imageUrl = p.imageUrl ?: "",
-                    role = p.type ?: "Player",
-                    teamId = p.teamId,
-                    battingStyle = p.battingStyle ?: p.battingHand ?: "N/A",
-                    bowlingStyle = p.bowlingStyle ?: p.bowlingType ?: "N/A"
-                )
+            result.onSuccess { selectedNames ->
+                val selectedPlayers = mutableListOf<Player>()
+                selectedNames.forEach { name ->
+                    players.find { it.displayName.equals(name, ignoreCase = true) }?.let { p ->
+                        selectedPlayers.add(
+                            Player(
+                                id = p.id,
+                                name = p.displayName,
+                                imageUrl = p.imageUrl ?: "",
+                                role = p.type ?: "Player",
+                                teamId = p.teamId,
+                                battingStyle = p.battingStyle ?: p.battingHand ?: "N/A",
+                                bowlingStyle = p.bowlingStyle ?: p.bowlingType ?: "N/A"
+                            )
+                        )
+                    }
+                }
+                
+                // If AI returned names that don't match EXACTLY, or less than 11, fallback to shuffling some
+                if (selectedPlayers.size < 5) {
+                    val fallback = players.shuffled().take(11).map { p ->
+                        Player(p.id, p.displayName, p.imageUrl ?: "", p.type ?: "Player", p.teamId, p.battingStyle ?: "N/A", p.bowlingStyle ?: "N/A")
+                    }
+                    _fantasyTeam.value = fallback
+                } else {
+                    _fantasyTeam.value = selectedPlayers
+                }
+            }.onFailure {
+                // Fallback to random if AI fails
+                val fallback = players.shuffled().take(11).map { p ->
+                    Player(p.id, p.displayName, p.imageUrl ?: "", p.type ?: "Player", p.teamId, p.battingStyle ?: "N/A", p.bowlingStyle ?: "N/A")
+                }
+                _fantasyTeam.value = fallback
             }
         }
     }

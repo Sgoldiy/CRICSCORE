@@ -16,6 +16,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -30,6 +31,7 @@ import com.cricpeak.scorelive.ads.AdsState
 import com.cricpeak.scorelive.ads.NativeAdViewHorizontal
 import com.cricpeak.scorelive.ui.theme.DarkBackground
 import com.cricpeak.scorelive.ui.theme.GilroyFontFamily
+import com.cricpeak.scorelive.ui.theme.RadialGold
 import com.cricpeak.scorelive.ui.theme.RadialTeal
 import kotlinx.coroutines.launch
 
@@ -72,6 +74,15 @@ fun OnboardingScreen(onFinish: () -> Unit, isPremium: Boolean = false, adsState:
         radius = 1000f
     )
 
+    val goldGradient = Brush.radialGradient(
+        colors = listOf(
+            RadialGold.copy(alpha = 0.25f),
+            Color.Transparent
+        ),
+        center = Offset(540f, -50f),
+        radius = 1000f
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -82,7 +93,7 @@ fun OnboardingScreen(onFinish: () -> Unit, isPremium: Boolean = false, adsState:
             modifier = Modifier
                 .fillMaxWidth()
                 .height(400.dp)
-                .background(radialGradient)
+                .background(if (isPremium) goldGradient else radialGradient)
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
@@ -109,7 +120,9 @@ fun OnboardingScreen(onFinish: () -> Unit, isPremium: Boolean = false, adsState:
                 ) {
                     repeat(onboardingItems.size) { iteration ->
                         val isSelected = pagerState.currentPage == iteration
-                        val color = if (isSelected) Color(0xFF00BFA5) else Color.White.copy(alpha = 0.3f)
+                        val color = if (isSelected) {
+                            if (isPremium) Color(0xFFFFD700) else Color(0xFF00BFA5)
+                        } else Color.White.copy(alpha = 0.3f)
                         val width = if (isSelected) 32.dp else 10.dp
                         Box(
                             modifier = Modifier

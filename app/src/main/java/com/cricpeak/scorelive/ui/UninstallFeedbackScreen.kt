@@ -26,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -40,8 +41,10 @@ import com.cricpeak.scorelive.ui.theme.DarkBackground
 import com.cricpeak.scorelive.ui.theme.GilroyFontFamily
 import com.cricpeak.scorelive.ui.theme.RadialTeal
 import com.cricpeak.scorelive.ui.theme.TextGray
+import com.cricpeak.scorelive.ui.theme.GoldPrimary
 import com.cricpeak.scorelive.ads.AdsState
 import com.cricpeak.scorelive.ads.BannerAdView
+import com.cricpeak.scorelive.ui.theme.RadialGold
 import com.google.firebase.database.FirebaseDatabase
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -57,6 +60,15 @@ fun UninstallFeedbackScreen(onBack: () -> Unit, isPremium: Boolean = false, adsS
     val radialGradient = Brush.radialGradient(
         colors = listOf(RadialTeal.copy(alpha = 0.5f), Color.Transparent),
         center = androidx.compose.ui.geometry.Offset(540f, -50f),
+        radius = 1000f
+    )
+
+    val goldGradient = Brush.radialGradient(
+        colors = listOf(
+            RadialGold.copy(alpha = 0.25f),
+            Color.Transparent
+        ),
+        center = Offset(540f, -50f),
         radius = 1000f
     )
 
@@ -106,7 +118,7 @@ fun UninstallFeedbackScreen(onBack: () -> Unit, isPremium: Boolean = false, adsS
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(350.dp)
-                    .background(radialGradient)
+                    .background(if (isPremium) goldGradient else radialGradient)
             )
 
             Column(
